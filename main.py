@@ -7,24 +7,14 @@ import shutil
 import hashlib
 import datetime
 import queue
-import customtkinter as ctk
 from pathlib import Path
+from tkinter import Tk, simpledialog, filedialog, messagebox
 from PIL import Image, ImageDraw
 import pystray
-from tkinter import filedialog
 from send2trash import send2trash
-
-BACKGROUND_COLOR = "#1e1f22"
-CARD_COLOR = "#2b2d31"
-BLURPLE = "#5865f2"
-TEXT_COLOR = "#dbdee1"
-GREEN = "#23a559"
-YELLOW = "#f2a318"
-RED = "#f23f42"
 
 APP_NAME = "Webhook-Uploader"
 BASE_DIR = Path(os.getenv("LOCALAPPDATA")) / APP_NAME
-
 CFG_DIR = BASE_DIR / "cfg"
 LOG_DIR = BASE_DIR / "log"
 
@@ -37,6 +27,7 @@ file_lock = threading.RLock()
 gui_queue = queue.Queue()
 monitoring = True
 icon_global = None
+send_lock = threading.Lock()
 
 
 def load_json(path, default):
@@ -187,25 +178,51 @@ def send_file(path):
 
 
 
+def send_now_manual():
+    if not config.get("folder"):
+        return
+
+    if not send_lock.acquire(blocking=False):
+        return
+
+    try:
+        files = [
+            os.path.join(config["folder"], f)
+            for f in os.listdir(config["folder"])
+            if os.path.isfile(os.path.join(config["folder"], f))
+        ]
+        for file in sorted(files, key=os.path.getctime):
+            if not monitoring:
+                break
+            if send_file(file):
+                time.sleep(10)
+    finally:
+        send_lock.release()
+
+
+
 def monitoring_loop():
     while True:
         if monitoring and config.get("folder") and config.get("webhook"):
-            try:
-                now = time.time()
-                files = [
-                    os.path.join(config["folder"], f)
-                    for f in os.listdir(config["folder"])
-                    if os.path.isfile(os.path.join(config["folder"], f))
-                ]
-                ready = [p for p in files if now - os.path.getctime(p) >= 3600]
+            if send_lock.acquire(blocking=False):
+                try:
+                    now = time.time()
+                    files = [
+                        os.path.join(config["folder"], f)
+                        for f in os.listdir(config["folder"])
+                        if os.path.isfile(os.path.join(config["folder"], f))
+                    ]
+                    ready = [p for p in files if now - os.path.getctime(p) >= 3600]
 
-                for file in sorted(ready, key=os.path.getctime):
-                    if not monitoring:
-                        break
-                    if send_file(file):
-                        time.sleep(10)
-            except Exception:
-                pass
+                    for file in sorted(ready, key=os.path.getctime):
+                        if not monitoring:
+                            break
+                        if send_file(file):
+                            time.sleep(10)
+                except Exception:
+                    pass
+                finally:
+                    send_lock.release()
 
         for _ in range(300):
             if not monitoring:
@@ -213,180 +230,146 @@ def monitoring_loop():
             time.sleep(1)
 
 
-class FloatingMenu(ctk.CTkToplevel):
-    def __init__(self):
-        super().__init__()
-        self.overrideredirect(True)
-        self.attributes("-topmost", True)
-        self.configure(fg_color=BACKGROUND_COLOR)
-        self.bind("<FocusOut>", lambda e: self.withdraw())
 
-        self.width = 240
-        self.height = 340
+def build_hidden_root():
+    root = Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    return root
 
-        self.frame = ctk.CTkFrame(
-            self,
-            fg_color=BACKGROUND_COLOR,
-            corner_radius=12,
-            border_width=1,
-            border_color="#3f4147",
-        )
-        self.frame.pack(expand=True, fill="both", padx=2, pady=2)
 
-        self.lbl_status = ctk.CTkLabel(
-            self.frame,
-            text="● MONITORING",
-            font=("Segoe UI", 11, "bold"),
-            text_color=GREEN,
-        )
-        self.lbl_status.pack(pady=(15, 10))
 
-        self.btn_send = self.add_item("Send Now", self.action_send)
-        self.btn_pause = self.add_item("Pause / Resume", self.action_pause)
-
-        ctk.CTkFrame(self.frame, height=1, fg_color="#3f4147").pack(fill="x", padx=15, pady=8)
-
-        self.add_item("Change Folder", self.action_folder)
-        self.add_item("Configure Webhook", self.action_webhook)
-        self.add_item("Clear History", self.action_clear)
-        self.add_item("Exit Program", self.action_exit, RED)
-
-    def add_item(self, text, command, color=TEXT_COLOR):
-        btn = ctk.CTkButton(
-            self.frame,
-            text=text,
-            command=command,
-            fg_color="transparent",
-            hover_color=CARD_COLOR,
-            anchor="w",
-            font=("Segoe UI", 12),
-            text_color=color,
-            height=38,
-            corner_radius=8,
-        )
-        btn.pack(fill="x", padx=8, pady=1)
-        return btn
-
-    def show(self):
-        x, y = self.winfo_pointerxy()
-
-        pos_x = x - self.width
-        pos_y = y - self.height - 40
-
-        self.geometry(f"{self.width}x{self.height}{pos_x:+d}{pos_y:+d}")
-
-        self.deiconify()
-        self.focus_force()
-        self.update_visual()
-
-    def update_visual(self):
-        color = GREEN if monitoring else YELLOW
-        txt = "● MONITORING" if monitoring else "● PAUSED"
-        self.lbl_status.configure(text=txt, text_color=color)
-
-    def action_pause(self):
-        global monitoring
-        monitoring = not monitoring
-        icon_global.icon = create_status_image(monitoring)
-        self.update_visual()
-
-    def action_send(self):
-        threading.Thread(target=send_now_manual, daemon=True).start()
-        self.withdraw()
-
-    def action_folder(self):
-        p = filedialog.askdirectory()
-        if p:
-            config["folder"] = p
+def ask_folder_gui():
+    root = build_hidden_root()
+    try:
+        folder = filedialog.askdirectory(title="Select folder to monitor", parent=root)
+        if folder:
+            config["folder"] = folder
             save_json(CONFIG_FILE, config)
-        self.withdraw()
-
-    def action_webhook(self):
-        dialog = ctk.CTkInputDialog(
-            text="Paste the Discord Webhook:",
-            title="Configuration",
-            button_fg_color=BLURPLE,
-        )
-        w = dialog.get_input()
-        if w and "discord.com" in w:
-            config["webhook"] = w.strip()
-            save_json(CONFIG_FILE, config)
-        self.withdraw()
-
-    def action_clear(self):
-        with file_lock:
-            sent_history.clear()
-        save_json(LOG_FILE, sent_history)
-        self.withdraw()
-
-    def action_exit(self):
-        icon_global.stop()
-        os._exit(0)
+    finally:
+        root.destroy()
 
 
 
-def send_now_manual():
+def ask_webhook_gui():
+    root = build_hidden_root()
+    try:
+        webhook = simpledialog.askstring("Webhook", "Paste the Discord Webhook:", parent=root)
+        if webhook:
+            webhook = webhook.strip()
+            if "discord.com/api/webhooks/" in webhook:
+                config["webhook"] = webhook
+                save_json(CONFIG_FILE, config)
+            else:
+                messagebox.showwarning("Invalid Webhook", "The webhook URL seems invalid.", parent=root)
+    finally:
+        root.destroy()
+
+
+
+def clear_history_gui():
+    root = build_hidden_root()
+    try:
+        ok = messagebox.askyesno("Clear History", "Do you want to clear the sent history?", parent=root)
+        if ok:
+            with file_lock:
+                sent_history.clear()
+            save_json(LOG_FILE, sent_history)
+    finally:
+        root.destroy()
+
+
+
+def first_run_setup():
     if not config.get("folder"):
-        return
-
-    files = [
-        os.path.join(config["folder"], f)
-        for f in os.listdir(config["folder"])
-        if os.path.isfile(os.path.join(config["folder"], f))
-    ]
-    for file in sorted(files, key=os.path.getctime):
-        if send_file(file):
-            time.sleep(10)
+        ask_folder_gui()
+    if not config.get("webhook"):
+        ask_webhook_gui()
 
 
 
-def open_menu_direct(icon, item):
-    gui_queue.put("open")
+def process_gui_queue():
+    while True:
+        try:
+            action = gui_queue.get(timeout=1)
+            if action == "setup":
+                first_run_setup()
+            elif action == "change_folder":
+                ask_folder_gui()
+            elif action == "change_webhook":
+                ask_webhook_gui()
+            elif action == "clear_history":
+                clear_history_gui()
+            elif action == "exit":
+                break
+        except queue.Empty:
+            continue
+
+
+
+def toggle_monitoring(icon, item=None):
+    global monitoring
+    monitoring = not monitoring
+    icon.icon = create_status_image(monitoring)
+    icon.title = "Discord Uploader (Monitoring)" if monitoring else "Discord Uploader (Paused)"
+
+
+
+def action_send_now(icon, item=None):
+    threading.Thread(target=send_now_manual, daemon=True).start()
+
+
+
+def action_change_folder(icon, item=None):
+    gui_queue.put("change_folder")
+
+
+
+def action_change_webhook(icon, item=None):
+    gui_queue.put("change_webhook")
+
+
+
+def action_clear_history(icon, item=None):
+    gui_queue.put("clear_history")
+
+
+
+def action_open_config(icon, item=None):
+    CFG_DIR.mkdir(parents=True, exist_ok=True)
+    os.startfile(CFG_DIR)
+
+
+
+def action_exit(icon, item=None):
+    icon.stop()
+    gui_queue.put("exit")
+
 
 
 if __name__ == "__main__":
-    ctk.set_appearance_mode("dark")
-    root = ctk.CTk()
-    root.withdraw()
-
-    menu_ui = FloatingMenu()
-    menu_ui.withdraw()
-
-    if not config.get("folder"):
-        p = filedialog.askdirectory(title="Select folder to monitor")
-        if p:
-            config["folder"] = p
-            save_json(CONFIG_FILE, config)
-    if not config.get("webhook"):
-        dialog = ctk.CTkInputDialog(
-            text="Paste the Discord Webhook:",
-            title="First Run - Webhook Setup",
-            button_fg_color=BLURPLE,
-        )
-        w = dialog.get_input()
-        if w and "discord.com" in w:
-            config["webhook"] = w.strip()
-            save_json(CONFIG_FILE, config)
-
-    item_invisible = pystray.MenuItem("Open", open_menu_direct, default=True, visible=False)
-    menu = pystray.Menu(item_invisible)
-
-    icon_global = pystray.Icon(APP_NAME, create_status_image(True), "Discord Uploader", menu)
-    icon_global.run_detached()
-
     threading.Thread(target=monitoring_loop, daemon=True).start()
+    threading.Thread(target=process_gui_queue, daemon=True).start()
 
-    def process():
-        try:
-            msg = gui_queue.get_nowait()
-            if msg == "open":
-                menu_ui.show()
-        except queue.Empty:
-            pass
-        except Exception as e:
-            print(f"Error opening interface: {e}")
+    if not config.get("folder") or not config.get("webhook"):
+        gui_queue.put("setup")
 
-        root.after(100, process)
+    menu = pystray.Menu(
+        pystray.MenuItem("Send Now", action_send_now),
+        pystray.MenuItem("Pause / Resume", toggle_monitoring),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Change Folder", action_change_folder),
+        pystray.MenuItem("Configure Webhook", action_change_webhook),
+        pystray.MenuItem("Clear History", action_clear_history),
+        pystray.MenuItem("Open Config Folder", action_open_config),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Exit Program", action_exit),
+    )
 
-    root.after(100, process)
-    root.mainloop()
+    icon_global = pystray.Icon(
+        APP_NAME,
+        create_status_image(True),
+        "Discord Uploader (Monitoring)",
+        menu,
+    )
+    icon_global.run()
