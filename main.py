@@ -71,7 +71,33 @@ def pedir_config_gui():
             messagebox.showwarning("Aviso", "URL inválida.", parent=root)
     root.destroy()
 
-# ARQUIVO LIVRE (robusto)
+def trocar_pasta():
+    root = Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    root.lift()
+    root.focus_force()
+    nova_pasta = filedialog.askdirectory(title="Nova Pasta Monitorada", parent=root)
+    if nova_pasta and os.path.isdir(nova_pasta):
+        config["pasta"] = nova_pasta
+        salvar_json(CONFIG_FILE, config)
+    root.destroy()
+
+def trocar_webhook():
+    root = Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    root.lift()
+    root.focus_force()
+    novo_webhook = simpledialog.askstring("Novo Webhook", "Cole o URL do webhook:", parent=root)
+    if novo_webhook and "discord.com/api/webhooks/" in novo_webhook:
+        config["webhook"] = novo_webhook.strip()
+        salvar_json(CONFIG_FILE, config)
+    elif novo_webhook:
+        messagebox.showwarning("Aviso", "URL inválida.", parent=root)
+    root.destroy()
+
+# ARQUIVO LIVRE
 def arquivo_esta_livre(caminho):
     try:
         for _ in range(5):
@@ -82,7 +108,7 @@ def arquivo_esta_livre(caminho):
         with open(caminho, 'rb+'): return True
     except Exception: return False
 
-# ENVIO COM RETRY
+# ENVIO
 def enviar_arquivo(caminho):
     if not config.get("webhook"): return False
     nome_arquivo = os.path.basename(caminho)
@@ -198,7 +224,8 @@ if __name__ == "__main__":
 
     menu = pystray.Menu(
         pystray.MenuItem("Pausar / Retomar", acao_pausar),
-        pystray.MenuItem("Configurações", lambda: threading.Thread(target=pedir_config_gui, daemon=True).start()),
+        pystray.MenuItem("Trocar Pasta", lambda: threading.Thread(target=trocar_pasta, daemon=True).start()),
+        pystray.MenuItem("Trocar Webhook", lambda: threading.Thread(target=trocar_webhook, daemon=True).start()),
         pystray.MenuItem("Abrir Pasta Config", lambda: os.startfile(CONFIG_DIR)),
         pystray.MenuItem("Sair", acao_sair)
     )
