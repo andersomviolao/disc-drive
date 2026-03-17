@@ -36,7 +36,7 @@ except Exception:
     winreg = None
 
 APP_NAME = "Webhook-Uploader"
-APP_VERSION = "1.9.2"
+APP_VERSION = "1.9.3"
 BASE_DIR = Path(os.getenv("LOCALAPPDATA", str(Path.home()))) / APP_NAME
 CFG_DIR = BASE_DIR / "cfg"
 LOG_DIR = BASE_DIR / "log"
@@ -750,19 +750,13 @@ class SettingsPage(PageBase):
         self.delete_toggle.clicked.connect(self.toggle_delete_after_send)
         self.scroll_body.addWidget(SettingRow("Excluir após enviar", "Ligado: move para a lixeira. Desligado: mantém o arquivo e evita duplicidade pelo log.", self.delete_toggle))
 
-        self.webhook_value = self.window.make_info_value()
-        self.scroll_body.addWidget(SettingRow("Webhook atual", "Valor salvo no momento.", self.webhook_value))
-
-        self.folder_value = self.window.make_info_value()
-        self.scroll_body.addWidget(SettingRow("Pasta monitorada atual", "Pasta usada no monitoramento automático.", self.folder_value))
-
         open_wrap = QWidget()
         open_wrap.setStyleSheet("background: transparent;")
         open_layout = QHBoxLayout(open_wrap)
         open_layout.setContentsMargins(0, 0, 0, 0)
         self.open_cfg_btn = self.window.make_small_button("Abrir pasta", self.open_config_folder)
         open_layout.addWidget(self.open_cfg_btn)
-        self.scroll_body.addWidget(SettingRow("Pasta de configurações", str(CFG_DIR), open_wrap))
+        self.scroll_body.addWidget(SettingRow("Pasta de configurações", str(BASE_DIR), open_wrap))
 
         self.version_value = self.window.make_info_value()
         self.scroll_body.addWidget(SettingRow("Versão do app", "Versão atual em uso.", self.version_value))
@@ -771,8 +765,6 @@ class SettingsPage(PageBase):
     def refresh(self):
         self.start_toggle.setChecked(config.get("start_with_windows", False))
         self.delete_toggle.setChecked(config.get("delete_after_send", True))
-        self.webhook_value.setText(config.get("webhook", ""))
-        self.folder_value.setText(config.get("folder", ""))
         self.version_value.setText(APP_VERSION)
         has_webhook = bool((config.get("webhook") or "").strip())
         self.test_btn.setEnabled(has_webhook)
@@ -799,12 +791,12 @@ class SettingsPage(PageBase):
         self.window.show_message("success" if ok else "error", msg)
 
     def open_config_folder(self):
-        CFG_DIR.mkdir(parents=True, exist_ok=True)
+        BASE_DIR.mkdir(parents=True, exist_ok=True)
         try:
-            os.startfile(str(CFG_DIR))
-            self.window.show_message("info", "Pasta de configurações aberta.")
+            os.startfile(str(BASE_DIR))
+            self.window.show_message("info", "Pasta raiz do Webhook-Uploader aberta.")
         except Exception:
-            self.window.show_message("error", "Não foi possível abrir a pasta de configurações.")
+            self.window.show_message("error", "Não foi possível abrir a pasta raiz do Webhook-Uploader.")
 
 
 class MainWindow(QWidget):
@@ -978,7 +970,6 @@ class MainWindow(QWidget):
         self.message_label.setStyleSheet(f"color:{colors.get(kind, MUTED)}; font: 700 11px 'Segoe UI';")
         self.message_label.setText(text)
         self.message_timer.start(4200)
-        self.tray_icon.showMessage(APP_NAME, text, QSystemTrayIcon.Information, 2200)
 
     def clear_message(self):
         self.message_label.setText("")
