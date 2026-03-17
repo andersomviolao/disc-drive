@@ -35,7 +35,7 @@ except Exception:
     winreg = None
 
 APP_NAME = "Webhook-Uploader"
-APP_VERSION = "1.9.7"
+APP_VERSION = "1.9.8"
 BASE_DIR = Path(os.getenv("LOCALAPPDATA", str(Path.home()))) / APP_NAME
 CFG_DIR = BASE_DIR / "cfg"
 LOG_DIR = BASE_DIR / "log"
@@ -1081,53 +1081,39 @@ class MainWindow(QWidget):
         super().mouseReleaseEvent(event)
 
 
-class TrayExitBubble(QFrame):
+class TrayExitBubble(QWidget):
     def __init__(self, on_exit, parent=None):
         super().__init__(parent)
         self.on_exit = on_exit
-        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setObjectName("TrayExitBubble")
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-
-        card = QFrame()
-        card.setObjectName("TrayExitBubbleCard")
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(10, 10, 10, 10)
-        card_layout.setSpacing(0)
+        outer.setSpacing(0)
 
         self.exit_btn = QPushButton("Encerrar")
         self.exit_btn.setCursor(Qt.PointingHandCursor)
         self.exit_btn.clicked.connect(self.handle_exit)
-        self.exit_btn.setMinimumSize(106, 34)
+        self.exit_btn.setFixedSize(92, 30)
         self.exit_btn.setStyleSheet(f"""
             QPushButton {{
-                background: {CARD};
-                color: white;
-                border: 1px solid {CARD_BORDER};
-                border-radius: 12px;
-                font-size: 12px;
-                font-weight: 600;
-                padding: 6px 14px;
+                background: #24272d;
+                color: {TEXT};
+                border: none;
+                border-radius: 11px;
+                font: 700 10px 'Segoe UI';
+                padding: 4px 10px;
                 text-align: center;
             }}
             QPushButton:hover {{
-                background: {HOVER_DARK};
-                border: 1px solid {BLUE};
+                background: #2b3038;
+            }}
+            QPushButton:pressed {{
+                background: #20242b;
             }}
         """)
-        card_layout.addWidget(self.exit_btn)
-        outer.addWidget(card)
-
-        self.setStyleSheet(f"""
-            #TrayExitBubbleCard {{
-                background: {BG};
-                border: 1px solid {CARD_BORDER};
-                border-radius: 14px;
-            }}
-        """)
+        outer.addWidget(self.exit_btn)
         self.hide()
 
     def handle_exit(self):
@@ -1137,8 +1123,8 @@ class TrayExitBubble(QFrame):
     def show_near_cursor(self):
         self.adjustSize()
         pos = QCursor.pos()
-        x = max(0, pos.x() - self.width() + 8)
-        y = max(0, pos.y() - self.height() - 8)
+        x = max(0, pos.x() - self.width() + 6)
+        y = max(0, pos.y() - self.height() - 6)
         self.move(x, y)
         self.show()
         self.raise_()
