@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QGraphicsOpacityEffect,
     QFileDialog,
     QScrollArea,
+    QTextEdit,
 )
 
 try:
@@ -36,7 +37,7 @@ except Exception:
     winreg = None
 
 APP_NAME = "Webhook-Uploader"
-APP_VERSION = "1.9.8"
+APP_VERSION = "2.0.1"
 BASE_DIR = Path(os.getenv("LOCALAPPDATA", str(Path.home()))) / APP_NAME
 CFG_DIR = BASE_DIR / "cfg"
 LOG_DIR = BASE_DIR / "log"
@@ -90,25 +91,40 @@ def save_json(path: Path, data):
             json.dump(data, f, indent=4, ensure_ascii=False)
 
 
-def load_template():
-    with file_lock:
-        CFG_DIR.mkdir(parents=True, exist_ok=True)
-        if not TEMPLATE_FILE.exists():
-            default = """🆕
+def default_template_text():
+    return """🆕
 📄 `{filename}`
 📅 `{creation_str}`
 🆙 Upload: {upload_str}
 ___"""
+
+
+def load_template():
+    with file_lock:
+        CFG_DIR.mkdir(parents=True, exist_ok=True)
+        if not TEMPLATE_FILE.exists():
+            default = default_template_text()
             TEMPLATE_FILE.write_text(default, encoding="utf-8")
             return default
         try:
             return TEMPLATE_FILE.read_text(encoding="utf-8")
         except Exception:
-            return """🆕
-📄 `{filename}`
-📅 `{creation_str}`
-🆙 Upload: {upload_str}
-___"""
+            return default_template_text()
+
+
+def save_template(text: str):
+    with file_lock:
+        CFG_DIR.mkdir(parents=True, exist_ok=True)
+        TEMPLATE_FILE.write_text(text, encoding="utf-8")
+
+
+def render_template_text(template: str, filename: str, creation_str: str, upload_str: str) -> str:
+    return (
+        template
+        .replace("{filename}", filename)
+        .replace("{creation_str}", creation_str)
+        .replace("{upload_str}", upload_str)
+    )
 
 
 def normalize_config(raw):
@@ -331,7 +347,7 @@ def send_file(path):
         upload_str = f"{DAYS_OF_WEEK[now_dt.weekday()]}, {now_dt.strftime('%d/%m/%y %H:%M:%S')}"
 
         template = load_template()
-        message = template.format(filename=filename, creation_str=creation_str, upload_str=upload_str)
+        message = render_template_text(template, filename, creation_str, upload_str)
 
         for attempt in range(4):
             try:
@@ -756,6 +772,45 @@ class FolderPage(PageBase):
         self.window.go_home()
 
 
+class PostTemplatePage(PageBase):
+    def __init__(self, window):
+        super().__init__("Personalizar post", "Edite o conteúdo bruto que será enviado junto com o arquivo no Discord.")
+        self.window = window
+        self.body.addSpacing(6)
+
+        self.editor = QTextEdit()
+        self.editor.setPlaceholderText("Digite aqui o conteúdo do post...")
+        self.editor.setStyleSheet(self.window.text_edit_style())
+        self.body.addWidget(self.editor, 1)
+
+        self.help_label = QLabel("Variáveis: {filename}  •  {creation_str}  •  {upload_str}")
+        self.help_label.setWordWrap(True)
+        self.help_label.setStyleSheet(f"color:{MUTED}; font: 500 9px 'Segoe UI';")
+        self.body.addWidget(self.help_label)
+
+        buttons = QHBoxLayout()
+        self.back_btn = self.window.make_secondary_button("← Voltar", self.back_to_settings)
+        buttons.addWidget(self.back_btn)
+        buttons.addStretch(1)
+        self.body.addLayout(buttons)
+
+    def refresh(self):
+        self.editor.setPlainText(load_template())
+        self.editor.setFocus()
+        cursor = self.editor.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        self.editor.setTextCursor(cursor)
+
+    def save_template(self, show_feedback=False):
+        text = self.editor.toPlainText().replace("\r\n", "\n")
+        save_template(text)
+        if show_feedback:
+            self.window.show_message("success", "post.txt salvo automaticamente.")
+    def back_to_settings(self):
+        self.save_template(show_feedback=True)
+        self.window.open_settings_page()
+
+
 class SettingRow(QFrame):
     def __init__(self, title, subtitle, right_widget):
         super().__init__()
@@ -833,6 +888,14 @@ class SettingsPage(PageBase):
         self.delete_toggle = ToggleSwitch(config.get("delete_after_send", True))
         self.delete_toggle.clicked.connect(self.toggle_delete_after_send)
         self.scroll_body.addWidget(SettingRow("Excluir após enviar", "Ligado: move para a lixeira. Desligado: mantém o arquivo e evita duplicidade pelo log.", self.delete_toggle))
+
+        post_wrap = QWidget()
+        post_wrap.setStyleSheet("background: transparent;")
+        post_layout = QHBoxLayout(post_wrap)
+        post_layout.setContentsMargins(0, 0, 0, 0)
+        self.post_btn = self.window.make_small_button("Editar post", self.window.open_post_template_page)
+        post_layout.addWidget(self.post_btn)
+        self.scroll_body.addWidget(SettingRow("Personalizar post", "Abre uma página para editar o texto do post e salvar no arquivo post.txt.", post_wrap))
 
         clear_wrap = QWidget()
         clear_wrap.setStyleSheet("background: transparent;")
@@ -938,8 +1001,9 @@ class MainWindow(QWidget):
         self.webhook_page = WebhookPage(self)
         self.folder_page = FolderPage(self)
         self.settings_page = SettingsPage(self)
+        self.post_template_page = PostTemplatePage(self)
 
-        for page in [self.home_page, self.webhook_page, self.folder_page, self.settings_page]:
+        for page in [self.home_page, self.webhook_page, self.folder_page, self.settings_page, self.post_template_page]:
             self.stack.addWidget(page)
 
         self.message_timer = QTimer(self)
@@ -965,6 +1029,19 @@ class MainWindow(QWidget):
         }}
         QLineEdit:focus {{ border: 1px solid {BLUE}; }}
         QLineEdit::placeholder {{ color: #6f7580; }}
+        """
+
+    def text_edit_style(self):
+        return f"""
+        QTextEdit {{
+            background: {FIELD_BG};
+            color: {FIELD_TEXT};
+            border: 1px solid #2c3038;
+            border-radius: 18px;
+            padding: 10px 12px;
+            font: 600 10px 'Segoe UI';
+        }}
+        QTextEdit:focus {{ border: 1px solid {BLUE}; }}
         """
 
     def make_primary_button(self, text, handler):
@@ -1052,7 +1129,14 @@ class MainWindow(QWidget):
         self.home_page.refresh()
         self.settings_page.refresh()
 
+    def save_post_template_if_needed(self, show_feedback=False):
+        if self.stack.currentWidget() is self.post_template_page:
+            self.post_template_page.save_template(show_feedback=show_feedback)
+
     def switch_page(self, page, animated=True):
+        current = self.stack.currentWidget()
+        if current is self.post_template_page and page is not self.post_template_page:
+            self.post_template_page.save_template()
         page.refresh()
         self.stack.setCurrentWidget(page)
         if animated:
@@ -1077,6 +1161,9 @@ class MainWindow(QWidget):
 
     def open_settings_page(self):
         self.switch_page(self.settings_page)
+
+    def open_post_template_page(self):
+        self.switch_page(self.post_template_page)
 
     def show_message(self, kind, text):
         colors = {
@@ -1106,13 +1193,19 @@ class MainWindow(QWidget):
 
     def toggle_visible(self):
         if self.isVisible():
+            self.save_post_template_if_needed()
             self.hide()
         else:
             self.show_near_tray()
 
     def hide_to_tray(self):
+        self.save_post_template_if_needed()
         self.hide()
         self.clear_message()
+
+    def hideEvent(self, event):
+        self.save_post_template_if_needed()
+        super().hideEvent(event)
 
     def show_near_tray(self):
         self.refresh_all()
@@ -1125,6 +1218,7 @@ class MainWindow(QWidget):
         self.activateWindow()
 
     def exit_app(self):
+        self.save_post_template_if_needed()
         stop_event.set()
         self.hide()
         self.tray_icon.hide()
@@ -1262,6 +1356,7 @@ class TrayController(QObject):
             self.window.toggle_visible()
 
     def exit_app(self):
+        self.window.save_post_template_if_needed()
         stop_event.set()
         self.window.hide()
         self.tray.hide()
