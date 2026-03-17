@@ -2,6 +2,7 @@ import sys
 import os
 import json
 import time
+import math
 import threading
 import requests
 import shutil
@@ -12,7 +13,7 @@ from pathlib import Path
 
 from send2trash import send2trash
 from PySide6.QtCore import Qt, Signal, QObject, QEasingCurve, QPropertyAnimation, QTimer
-from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap, QBrush
 from PySide6.QtWidgets import (
     QApplication,
     QWidget,
@@ -131,20 +132,78 @@ class UISignals(QObject):
 signals = UISignals()
 
 
-def create_tray_icon(active: bool) -> QIcon:
-    size = 64
-    pix = QPixmap(size, size)
+TRAY_ICON_SIZE = 64
+TRAY_ICON_CENTER = TRAY_ICON_SIZE // 2
+TRAY_RING_RADIUS = 23
+TRAY_DOT_RADIUS = 5
+TRAY_DOT_COUNT = 12
+TRAY_BLUE = QColor(70, 140, 255)
+TRAY_YELLOW = QColor(255, 210, 0)
+TRAY_GREEN = QColor(0, 220, 120)
+
+
+def draw_tray_ring(color: QColor) -> QIcon:
+    pix = QPixmap(TRAY_ICON_SIZE, TRAY_ICON_SIZE)
     pix.fill(Qt.transparent)
-    p = QPainter(pix)
-    p.setRenderHint(QPainter.Antialiasing)
-    outer = QColor(BLUE if active else YELLOW)
-    p.setBrush(outer)
-    p.setPen(Qt.NoPen)
-    p.drawEllipse(4, 4, 56, 56)
-    p.setBrush(QColor(BG))
-    p.drawEllipse(16, 16, 32, 32)
-    p.end()
+
+    painter = QPainter(pix)
+    painter.setRenderHint(QPainter.Antialiasing)
+
+    pen = QPen(color)
+    pen.setWidth(8)
+    painter.setPen(pen)
+    painter.setBrush(Qt.NoBrush)
+    painter.drawEllipse(
+        TRAY_ICON_CENTER - TRAY_RING_RADIUS,
+        TRAY_ICON_CENTER - TRAY_RING_RADIUS,
+        TRAY_RING_RADIUS * 2,
+        TRAY_RING_RADIUS * 2,
+    )
+
+    painter.end()
     return QIcon(pix)
+
+
+def draw_tray_sending(rotation: float) -> QIcon:
+    pix = QPixmap(TRAY_ICON_SIZE, TRAY_ICON_SIZE)
+    pix.fill(Qt.transparent)
+
+    painter = QPainter(pix)
+    painter.setRenderHint(QPainter.Antialiasing)
+
+    pen = QPen(TRAY_BLUE)
+    pen.setWidth(8)
+    painter.setPen(pen)
+    painter.setBrush(Qt.NoBrush)
+    painter.drawEllipse(
+        TRAY_ICON_CENTER - TRAY_RING_RADIUS,
+        TRAY_ICON_CENTER - TRAY_RING_RADIUS,
+        TRAY_RING_RADIUS * 2,
+        TRAY_RING_RADIUS * 2,
+    )
+
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(QBrush(TRAY_GREEN))
+
+    for i in range(TRAY_DOT_COUNT):
+        angle = (i / TRAY_DOT_COUNT) * 2 * math.pi + rotation
+        x = TRAY_ICON_CENTER + math.cos(angle) * TRAY_RING_RADIUS
+        y = TRAY_ICON_CENTER + math.sin(angle) * TRAY_RING_RADIUS
+        painter.drawEllipse(
+            int(x - TRAY_DOT_RADIUS),
+            int(y - TRAY_DOT_RADIUS),
+            TRAY_DOT_RADIUS * 2,
+            TRAY_DOT_RADIUS * 2,
+        )
+
+    painter.end()
+    return QIcon(pix)
+
+
+def create_tray_icon(active: bool, sending: bool = False, rotation: float = 0.0) -> QIcon:
+    if sending:
+        return draw_tray_sending(rotation)
+    return draw_tray_ring(TRAY_BLUE if active else TRAY_YELLOW)
 
 
 def save_config():
@@ -1037,7 +1096,6 @@ class MainWindow(QWidget):
         signals.status_changed.emit(monitoring)
 
     def on_status_changed(self, active):
-        self.tray_icon.setIcon(create_tray_icon(active))
         self.home_page.update_pause_visual()
 
     def toggle_visible(self):
@@ -1141,11 +1199,18 @@ class TrayController(QObject):
         self.app = app
         self.tray = QSystemTrayIcon(create_tray_icon(True), app)
         self.tray.setToolTip(f"{APP_NAME} v{APP_VERSION}")
+        self.rotation = 0.0
+        self._last_static_state = None
 
         self.window = MainWindow(self.tray)
         self.exit_bubble = TrayExitBubble(self.exit_app)
         self.tray.activated.connect(self.on_tray_activated)
         signals.status_changed.connect(self.sync_pause_action)
+
+        self.tray_timer = QTimer(self)
+        self.tray_timer.setInterval(80)
+        self.tray_timer.timeout.connect(self.refresh_tray_icon)
+        self.tray_timer.start()
 
         self.sync_pause_action(monitoring)
         self.tray.show()
@@ -1153,7 +1218,6 @@ class TrayController(QObject):
     def start_send_now(self):
         thread = threading.Thread(target=send_now_manual, daemon=True)
         thread.start()
-
 
     def toggle_monitoring(self):
         global monitoring
@@ -1164,9 +1228,24 @@ class TrayController(QObject):
         self.window.open_settings_page()
         self.window.show_near_tray()
 
+    def refresh_tray_icon(self, force=False):
+        sending = send_lock.locked()
+        active = monitoring
+
+        if sending:
+            self.rotation += 0.35
+            self.tray.setIcon(create_tray_icon(active, sending=True, rotation=self.rotation))
+            self._last_static_state = None
+            return
+
+        state_key = "normal" if active else "paused"
+        if force or self._last_static_state != state_key:
+            self.tray.setIcon(create_tray_icon(active, sending=False))
+            self._last_static_state = state_key
+
     def sync_pause_action(self, active):
-        self.tray.setIcon(create_tray_icon(active))
         self.window.home_page.update_pause_visual()
+        self.refresh_tray_icon(force=True)
 
     def on_tray_activated(self, reason):
         if reason == QSystemTrayIcon.Context:
