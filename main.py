@@ -67,6 +67,7 @@ STARTUP_REG_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
 file_lock = threading.RLock()
 send_lock = threading.Lock()
+sending_event = threading.Event()
 monitoring = True
 stop_event = threading.Event()
 
@@ -335,12 +336,16 @@ def send_file(path):
         for attempt in range(4):
             try:
                 with open(path, "rb") as f:
-                    res = requests.post(
-                        webhook,
-                        data={"content": message},
-                        files={"file": (filename, f)},
-                        timeout=15,
-                    )
+                    sending_event.set()
+                    try:
+                        res = requests.post(
+                            webhook,
+                            data={"content": message},
+                            files={"file": (filename, f)},
+                            timeout=15,
+                        )
+                    finally:
+                        sending_event.clear()
 
                 if res.status_code in [200, 204]:
                     finalize_sent_file(path, filename, file_hash, upload_str)
@@ -351,6 +356,7 @@ def send_file(path):
                     continue
                 break
             except Exception:
+                sending_event.clear()
                 time.sleep(2 ** attempt)
 
         return False
@@ -1229,7 +1235,7 @@ class TrayController(QObject):
         self.window.show_near_tray()
 
     def refresh_tray_icon(self, force=False):
-        sending = send_lock.locked()
+        sending = sending_event.is_set()
         active = monitoring
 
         if sending:
