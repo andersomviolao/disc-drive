@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QWidget,
     QVBoxLayout,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -26,6 +27,7 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QGraphicsOpacityEffect,
     QFileDialog,
+    QScrollArea,
 )
 
 try:
@@ -34,7 +36,7 @@ except Exception:
     winreg = None
 
 APP_NAME = "Webhook-Uploader"
-APP_VERSION = "1.9.1"
+APP_VERSION = "1.9.2"
 BASE_DIR = Path(os.getenv("LOCALAPPDATA", str(Path.home()))) / APP_NAME
 CFG_DIR = BASE_DIR / "cfg"
 LOG_DIR = BASE_DIR / "log"
@@ -670,15 +672,20 @@ class FolderPage(PageBase):
         self.window.go_home()
 
 
-class SettingRow(QWidget):
+class SettingRow(QFrame):
     def __init__(self, title, subtitle, right_widget):
         super().__init__()
+        self.setObjectName("settingRow")
         self.setStyleSheet(
             f"""
-            QWidget {{
+            QFrame#settingRow {{
                 background: {CARD};
                 border: 1px solid {CARD_BORDER};
                 border-radius: 16px;
+            }}
+            QLabel {{
+                background: transparent;
+                border: none;
             }}
             """
         )
@@ -690,16 +697,15 @@ class SettingRow(QWidget):
         left.setSpacing(2)
 
         t = QLabel(title)
-        t.setStyleSheet(f"color:{TEXT}; font: 700 12px 'Segoe UI'; background: transparent; border: none;")
+        t.setStyleSheet(f"color:{TEXT}; font: 700 12px 'Segoe UI';")
         left.addWidget(t)
 
         s = QLabel(subtitle)
         s.setWordWrap(True)
-        s.setStyleSheet(f"color:{MUTED}; font: 500 11px 'Segoe UI'; background: transparent; border: none;")
+        s.setStyleSheet(f"color:{MUTED}; font: 500 11px 'Segoe UI';")
         left.addWidget(s)
 
         root.addLayout(left, 1)
-        right_widget.setStyleSheet(right_widget.styleSheet() + "background: transparent; border: none;")
         root.addWidget(right_widget, 0, Qt.AlignVCenter)
 
 
@@ -714,37 +720,53 @@ class SettingsPage(PageBase):
         back_row.addStretch(1)
         self.body.addLayout(back_row)
 
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.NoFrame)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll.setStyleSheet("QScrollArea { background: transparent; border: none; } QScrollBar:vertical { background: transparent; width: 8px; } QScrollBar::handle:vertical { background: #2a2d34; border-radius: 4px; min-height: 24px; } QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; } QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }")
+
+        self.scroll_host = QWidget()
+        self.scroll_host.setStyleSheet("background: transparent;")
+        self.scroll_body = QVBoxLayout(self.scroll_host)
+        self.scroll_body.setContentsMargins(0, 0, 4, 0)
+        self.scroll_body.setSpacing(10)
+        self.scroll.setWidget(self.scroll_host)
+        self.body.addWidget(self.scroll, 1)
+
         self.start_toggle = ToggleSwitch(config.get("start_with_windows", False))
         self.start_toggle.clicked.connect(self.toggle_startup)
-        self.body.addWidget(SettingRow("Iniciar com Windows", "Abre oculto na bandeja quando o Windows iniciar.", self.start_toggle))
+        self.scroll_body.addWidget(SettingRow("Iniciar com Windows", "Abre oculto na bandeja quando o Windows iniciar.", self.start_toggle))
 
         test_wrap = QWidget()
+        test_wrap.setStyleSheet("background: transparent;")
         test_layout = QHBoxLayout(test_wrap)
         test_layout.setContentsMargins(0, 0, 0, 0)
         self.test_btn = self.window.make_small_button("Testar", self.test_webhook)
         test_layout.addWidget(self.test_btn)
-        self.body.addWidget(SettingRow("Testar webhook", "Envia uma mensagem de texto simples para o webhook atual.", test_wrap))
+        self.scroll_body.addWidget(SettingRow("Testar webhook", "Envia uma mensagem de texto simples para o webhook atual.", test_wrap))
 
         self.delete_toggle = ToggleSwitch(config.get("delete_after_send", True))
         self.delete_toggle.clicked.connect(self.toggle_delete_after_send)
-        self.body.addWidget(SettingRow("Excluir após enviar", "Ligado: move para a lixeira. Desligado: mantém o arquivo e evita duplicidade pelo log.", self.delete_toggle))
+        self.scroll_body.addWidget(SettingRow("Excluir após enviar", "Ligado: move para a lixeira. Desligado: mantém o arquivo e evita duplicidade pelo log.", self.delete_toggle))
 
         self.webhook_value = self.window.make_info_value()
-        self.body.addWidget(SettingRow("Webhook atual", "Valor salvo no momento.", self.webhook_value))
+        self.scroll_body.addWidget(SettingRow("Webhook atual", "Valor salvo no momento.", self.webhook_value))
 
         self.folder_value = self.window.make_info_value()
-        self.body.addWidget(SettingRow("Pasta monitorada atual", "Pasta usada no monitoramento automático.", self.folder_value))
+        self.scroll_body.addWidget(SettingRow("Pasta monitorada atual", "Pasta usada no monitoramento automático.", self.folder_value))
 
         open_wrap = QWidget()
+        open_wrap.setStyleSheet("background: transparent;")
         open_layout = QHBoxLayout(open_wrap)
         open_layout.setContentsMargins(0, 0, 0, 0)
         self.open_cfg_btn = self.window.make_small_button("Abrir pasta", self.open_config_folder)
         open_layout.addWidget(self.open_cfg_btn)
-        self.body.addWidget(SettingRow("Pasta de configurações", str(CFG_DIR), open_wrap))
+        self.scroll_body.addWidget(SettingRow("Pasta de configurações", str(CFG_DIR), open_wrap))
 
         self.version_value = self.window.make_info_value()
-        self.body.addWidget(SettingRow("Versão do app", "Versão atual em uso.", self.version_value))
-        self.body.addStretch(1)
+        self.scroll_body.addWidget(SettingRow("Versão do app", "Versão atual em uso.", self.version_value))
+        self.scroll_body.addStretch(1)
 
     def refresh(self):
         self.start_toggle.setChecked(config.get("start_with_windows", False))
