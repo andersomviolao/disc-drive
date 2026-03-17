@@ -29,6 +29,8 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QScrollArea,
     QTextEdit,
+    QDialog,
+    QColorDialog,
 )
 
 try:
@@ -37,7 +39,7 @@ except Exception:
     winreg = None
 
 APP_NAME = "Webhook-Uploader"
-APP_VERSION = "2.0.1"
+APP_VERSION = "2.0.2"
 BASE_DIR = Path(os.getenv("LOCALAPPDATA", str(Path.home()))) / APP_NAME
 CFG_DIR = BASE_DIR / "cfg"
 LOG_DIR = BASE_DIR / "log"
@@ -60,6 +62,7 @@ RED = "#ff5f73"
 GREEN = "#4fd18b"
 CARD = "#1a1c20"
 CARD_BORDER = "#252830"
+DEFAULT_EMBED_COLOR = "#F54927"
 
 WAIT_TIME = 3600
 POST_INTERVAL = 10
@@ -118,6 +121,28 @@ def save_template(text: str):
         TEMPLATE_FILE.write_text(text, encoding="utf-8")
 
 
+def parse_hex_color(value: str):
+    text = (value or "").strip().upper()
+    if text.startswith("#"):
+        text = text[1:]
+    if len(text) == 3 and all(c in "0123456789ABCDEF" for c in text):
+        text = "".join(c * 2 for c in text)
+    if len(text) == 6 and all(c in "0123456789ABCDEF" for c in text):
+        return f"#{text}"
+    return None
+
+
+def normalize_hex_color(value: str, default: str = DEFAULT_EMBED_COLOR) -> str:
+    parsed = parse_hex_color(value)
+    if parsed:
+        return parsed
+    return parse_hex_color(default) or "#F54927"
+
+
+def discord_color_int(hex_color: str) -> int:
+    return int(normalize_hex_color(hex_color)[1:], 16)
+
+
 def render_template_text(template: str, filename: str, creation_str: str, upload_str: str) -> str:
     return (
         template
@@ -133,6 +158,8 @@ def normalize_config(raw):
         "webhook": raw.get("webhook", ""),
         "start_with_windows": bool(raw.get("start_with_windows", False)),
         "delete_after_send": bool(raw.get("delete_after_send", True)),
+        "use_embed": bool(raw.get("use_embed", False)),
+        "embed_color": normalize_hex_color(raw.get("embed_color", DEFAULT_EMBED_COLOR)),
     }
 
 
@@ -348,18 +375,37 @@ def send_file(path):
 
         template = load_template()
         message = render_template_text(template, filename, creation_str, upload_str)
+        use_embed = bool(config.get("use_embed", False))
+        embed_color = normalize_hex_color(config.get("embed_color", DEFAULT_EMBED_COLOR))
 
         for attempt in range(4):
             try:
                 with open(path, "rb") as f:
                     sending_event.set()
                     try:
-                        res = requests.post(
-                            webhook,
-                            data={"content": message},
-                            files={"file": (filename, f)},
-                            timeout=15,
-                        )
+                        if use_embed:
+                            embed_description = message if len(message) <= 4096 else message[:4093] + "..."
+                            payload = {
+                                "embeds": [
+                                    {
+                                        "description": embed_description,
+                                        "color": discord_color_int(embed_color),
+                                    }
+                                ]
+                            }
+                            res = requests.post(
+                                webhook,
+                                data={"payload_json": json.dumps(payload, ensure_ascii=False)},
+                                files={"file": (filename, f)},
+                                timeout=15,
+                            )
+                        else:
+                            res = requests.post(
+                                webhook,
+                                data={"content": message},
+                                files={"file": (filename, f)},
+                                timeout=15,
+                            )
                     finally:
                         sending_event.clear()
 
@@ -516,6 +562,179 @@ class ToggleSwitch(QPushButton):
         painter.setBrush(QColor("#ffffff"))
         painter.drawEllipse(*knob_rect)
         painter.end()
+
+
+class ColorSwatchButton(QPushButton):
+    def __init__(self, hex_color=DEFAULT_EMBED_COLOR):
+        super().__init__()
+        self._hovered = False
+        self._color = normalize_hex_color(hex_color)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setToolTip("Cor do embed")
+        self.setFixedSize(30, 30)
+        self.apply_style()
+
+    def set_color(self, hex_color):
+        self._color = normalize_hex_color(hex_color)
+        self.apply_style()
+
+    def apply_style(self):
+        border = "#ffffff" if self._hovered else "#2f343d"
+        self.setStyleSheet(
+            f"""
+            QPushButton {{
+                background: {self._color};
+                border: 2px solid {border};
+                border-radius: 15px;
+            }}
+            """
+        )
+
+    def enterEvent(self, event):
+        self._hovered = True
+        self.apply_style()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hovered = False
+        self.apply_style()
+        super().leaveEvent(event)
+
+
+class EmbedColorDialog(QDialog):
+    def __init__(self, initial_hex=DEFAULT_EMBED_COLOR, parent=None):
+        super().__init__(parent)
+        self.selected_hex = normalize_hex_color(initial_hex)
+        self.setModal(True)
+        self.setWindowTitle("Cor do embed")
+        self.resize(460, 430)
+        self.setStyleSheet(
+            f"""
+            QDialog {{
+                background: {PANEL};
+                color: {TEXT};
+            }}
+            QLabel {{
+                color: {TEXT};
+                font: 600 10px 'Segoe UI';
+            }}
+            QLineEdit {{
+                background: {FIELD_BG};
+                color: {FIELD_TEXT};
+                border: 1px solid #2c3038;
+                border-radius: 12px;
+                padding: 0 12px;
+                min-height: 32px;
+                font: 700 10px 'Segoe UI';
+            }}
+            QLineEdit:focus {{
+                border: 1px solid {BLUE};
+            }}
+            QPushButton {{
+                background: #24272d;
+                color: {TEXT};
+                border: 1px solid #30343d;
+                border-radius: 12px;
+                padding: 7px 12px;
+                font: 700 10px 'Segoe UI';
+            }}
+            QPushButton:hover {{
+                background: #2b3038;
+            }}
+            QColorDialog {{
+                background: {PANEL};
+            }}
+            QColorDialog QPushButton {{
+                min-height: 26px;
+            }}
+            QColorDialog QSpinBox, QColorDialog QLineEdit, QColorDialog QComboBox {{
+                background: {FIELD_BG};
+                color: {FIELD_TEXT};
+                border: 1px solid #2c3038;
+                border-radius: 8px;
+                min-height: 24px;
+                padding: 0 6px;
+            }}
+            """
+        )
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(12, 12, 12, 12)
+        root.setSpacing(10)
+
+        self.picker = QColorDialog(self)
+        self.picker.setOption(QColorDialog.DontUseNativeDialog, True)
+        self.picker.setOption(QColorDialog.NoButtons, True)
+        self.picker.setCurrentColor(QColor(self.selected_hex))
+        self.picker.currentColorChanged.connect(self.on_color_changed)
+        root.addWidget(self.picker, 1)
+
+        info = QLabel("Hex")
+        root.addWidget(info)
+
+        controls = QHBoxLayout()
+        controls.setContentsMargins(0, 0, 0, 0)
+        controls.setSpacing(10)
+
+        self.preview = QLabel()
+        self.preview.setFixedSize(28, 28)
+        controls.addWidget(self.preview)
+
+        self.hex_input = QLineEdit(self.selected_hex)
+        self.hex_input.setMaxLength(7)
+        self.hex_input.editingFinished.connect(self.apply_hex_input)
+        controls.addWidget(self.hex_input, 1)
+
+        self.cancel_btn = QPushButton("Cancelar")
+        self.cancel_btn.clicked.connect(self.reject)
+        controls.addWidget(self.cancel_btn)
+
+        self.apply_btn = QPushButton("Aplicar")
+        self.apply_btn.setStyleSheet(
+            f"""
+            QPushButton {{
+                background: {BLUE};
+                color: white;
+                border: none;
+                border-radius: 12px;
+                padding: 7px 14px;
+                font: 700 10px 'Segoe UI';
+            }}
+            QPushButton:hover {{
+                background: #69adff;
+            }}
+            """
+        )
+        self.apply_btn.clicked.connect(self.accept_current)
+        controls.addWidget(self.apply_btn)
+
+        root.addLayout(controls)
+        self.update_preview(self.selected_hex)
+
+    def update_preview(self, hex_color):
+        self.preview.setStyleSheet(
+            f"background:{hex_color}; border:2px solid #2f343d; border-radius:14px;"
+        )
+
+    def on_color_changed(self, color):
+        hex_color = normalize_hex_color(color.name())
+        self.selected_hex = hex_color
+        self.hex_input.setText(hex_color)
+        self.update_preview(hex_color)
+
+    def apply_hex_input(self):
+        parsed = parse_hex_color(self.hex_input.text())
+        if not parsed:
+            self.hex_input.setText(self.selected_hex)
+            return
+        self.selected_hex = parsed
+        self.hex_input.setText(parsed)
+        self.picker.setCurrentColor(QColor(parsed))
+        self.update_preview(parsed)
+
+    def accept_current(self):
+        self.apply_hex_input()
+        self.accept()
 
 
 class RoundedPanel(QWidget):
@@ -789,23 +1008,53 @@ class PostTemplatePage(PageBase):
         self.body.addWidget(self.help_label)
 
         buttons = QHBoxLayout()
+        buttons.setContentsMargins(0, 0, 0, 0)
+        buttons.setSpacing(8)
+
         self.back_btn = self.window.make_secondary_button("← Voltar", self.back_to_settings)
         buttons.addWidget(self.back_btn)
         buttons.addStretch(1)
+
+        self.color_btn = ColorSwatchButton(config.get("embed_color", DEFAULT_EMBED_COLOR))
+        self.color_btn.clicked.connect(self.open_embed_color_dialog)
+        buttons.addWidget(self.color_btn, 0, Qt.AlignVCenter)
+
+        self.embed_label = QLabel("Embed")
+        self.embed_label.setStyleSheet(f"color:{TEXT}; font: 700 10px 'Segoe UI';")
+        buttons.addWidget(self.embed_label, 0, Qt.AlignVCenter)
+
+        self.embed_toggle = ToggleSwitch(config.get("use_embed", False))
+        self.embed_toggle.clicked.connect(self.toggle_embed)
+        buttons.addWidget(self.embed_toggle, 0, Qt.AlignVCenter)
+
         self.body.addLayout(buttons)
 
     def refresh(self):
         self.editor.setPlainText(load_template())
+        self.embed_toggle.setChecked(bool(config.get("use_embed", False)))
+        self.color_btn.set_color(config.get("embed_color", DEFAULT_EMBED_COLOR))
         self.editor.setFocus()
         cursor = self.editor.textCursor()
         cursor.movePosition(cursor.MoveOperation.End)
         self.editor.setTextCursor(cursor)
+
+    def toggle_embed(self):
+        config["use_embed"] = self.embed_toggle.isChecked()
+        save_config()
+
+    def open_embed_color_dialog(self):
+        dialog = EmbedColorDialog(config.get("embed_color", DEFAULT_EMBED_COLOR), self.window)
+        if dialog.exec() == QDialog.Accepted:
+            config["embed_color"] = normalize_hex_color(dialog.selected_hex)
+            save_config()
+            self.color_btn.set_color(config["embed_color"])
 
     def save_template(self, show_feedback=False):
         text = self.editor.toPlainText().replace("\r\n", "\n")
         save_template(text)
         if show_feedback:
             self.window.show_message("success", "post.txt salvo automaticamente.")
+
     def back_to_settings(self):
         self.save_template(show_feedback=True)
         self.window.open_settings_page()
