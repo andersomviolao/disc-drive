@@ -36,7 +36,7 @@ except Exception:
     winreg = None
 
 APP_NAME = "Webhook-Uploader"
-APP_VERSION = "1.9.4"
+APP_VERSION = "1.9.5"
 BASE_DIR = Path(os.getenv("LOCALAPPDATA", str(Path.home()))) / APP_NAME
 CFG_DIR = BASE_DIR / "cfg"
 LOG_DIR = BASE_DIR / "log"
@@ -490,11 +490,11 @@ class HomePage(PageBase):
         self.window = window
 
         top_row = QHBoxLayout()
-        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.setContentsMargins(0, 0, 0, 4)
         top_row.addStretch(1)
-        self.cfg_btn = HoverButton("⚙", size=24, tooltip="Configurações", bg="transparent", hover="#1d2025", fg="#6f7580", font_size=10)
+        self.cfg_btn = HoverButton("⚙", size=22, tooltip="Configurações", bg="transparent", hover="#1d2025", fg="#6f7580", font_size=9)
         self.cfg_btn.clicked.connect(self.window.open_settings_page)
-        top_row.addWidget(self.cfg_btn, 0, Qt.AlignTop)
+        top_row.addWidget(self.cfg_btn, 0, Qt.AlignRight | Qt.AlignTop)
         self.body.addLayout(top_row)
 
         self.body.addWidget(self.make_label("Webhook"))
@@ -515,11 +515,11 @@ class HomePage(PageBase):
         bottom.setSpacing(8)
 
         self.pause_btn = self.window.make_secondary_button("Rodando", self.window.toggle_monitoring)
-        self.pause_btn.setMinimumWidth(92)
+        self.pause_btn.setMinimumSize(100, 34)
         bottom.addWidget(self.pause_btn)
 
         self.close_btn = self.window.make_secondary_button("Esconder", self.window.hide_to_tray)
-        self.close_btn.setMinimumWidth(92)
+        self.close_btn.setMinimumSize(100, 34)
         bottom.addWidget(self.close_btn)
 
         self.body.addLayout(bottom)
@@ -567,7 +567,7 @@ class HomePage(PageBase):
         row.addWidget(field, 1)
 
         button = self.window.make_small_button(button_text, handler)
-        button.setMinimumWidth(70)
+        button.setFixedSize(82, 30)
         row.addWidget(button)
 
         return {"card": card, "field": field, "button": button}
@@ -762,6 +762,14 @@ class SettingsPage(PageBase):
         self.delete_toggle.clicked.connect(self.toggle_delete_after_send)
         self.scroll_body.addWidget(SettingRow("Excluir após enviar", "Ligado: move para a lixeira. Desligado: mantém o arquivo e evita duplicidade pelo log.", self.delete_toggle))
 
+        clear_wrap = QWidget()
+        clear_wrap.setStyleSheet("background: transparent;")
+        clear_layout = QHBoxLayout(clear_wrap)
+        clear_layout.setContentsMargins(0, 0, 0, 0)
+        self.clear_log_btn = self.window.make_small_button("Limpar log", self.clear_log, accent=YELLOW)
+        clear_layout.addWidget(self.clear_log_btn)
+        self.scroll_body.addWidget(SettingRow("Limpar log", "Apaga o histórico de arquivos já enviados e permite novo envio desses arquivos.", clear_wrap))
+
         open_wrap = QWidget()
         open_wrap.setStyleSheet("background: transparent;")
         open_layout = QHBoxLayout(open_wrap)
@@ -802,6 +810,10 @@ class SettingsPage(PageBase):
         ok, msg = send_test_message()
         self.window.show_message("success" if ok else "error", msg)
 
+    def clear_log(self):
+        clear_sent_log()
+        self.window.show_message("success", "Log de envio limpo.")
+
     def open_config_folder(self):
         BASE_DIR.mkdir(parents=True, exist_ok=True)
         try:
@@ -809,6 +821,15 @@ class SettingsPage(PageBase):
             self.window.show_message("info", "Pasta raiz do Webhook-Uploader aberta.")
         except Exception:
             self.window.show_message("error", "Não foi possível abrir a pasta raiz do Webhook-Uploader.")
+
+
+
+
+def clear_sent_log():
+    global sent_history
+    with file_lock:
+        sent_history = []
+    save_json(LOG_FILE, sent_history)
 
 
 class MainWindow(QWidget):
@@ -820,7 +841,7 @@ class MainWindow(QWidget):
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setFixedSize(560, 332)
+        self.setFixedSize(560, 350)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(12, 12, 12, 12)
@@ -943,6 +964,8 @@ class MainWindow(QWidget):
         btn = QPushButton(text)
         btn.setCursor(Qt.PointingHandCursor)
         btn.clicked.connect(handler)
+        btn.setMinimumHeight(30)
+        btn.setMinimumWidth(78)
         btn.setStyleSheet(self.small_button_style(True, accent=accent))
         return btn
 
