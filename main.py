@@ -33,7 +33,9 @@ LOG_FILE = LOG_DIR / "log.json"
 TEMPLATE_FILE = CFG_DIR / "post.txt"
 DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
-file_lock = threading.Lock()
+file_lock = threading.RLock()
+# RLock evita deadlock quando a mesma thread precisa reacquirir o lock
+# em fluxos como send_file() -> save_json().
 gui_queue = queue.Queue()
 monitoring = True
 icon_global = None
@@ -59,20 +61,22 @@ def load_template():
     with file_lock:
         CFG_DIR.mkdir(parents=True, exist_ok=True)
         if not TEMPLATE_FILE.exists():
-            default = """🆕 **File Sent**
+            default = """🆕
 📄 `{filename}`
-📅 Created: {creation_str}
-🆙 Upload: {upload_str}"""
+📅 `{creation_str}`
+🆙 Upload: {upload_str}
+___"""
             TEMPLATE_FILE.write_text(default, encoding="utf-8")
             return default
         try:
             with open(TEMPLATE_FILE, "r", encoding="utf-8") as f:
                 return f.read()
         except:
-            return """🆕 **File Sent**
+            return """🆕
 📄 `{filename}`
-📅 Created: {creation_str}
-🆙 Upload: {upload_str}"""
+📅 `{creation_str}`
+🆙 Upload: {upload_str}
+___"""
 
 config = load_json(CONFIG_FILE, {"folder": "", "webhook": ""})
 sent_history = load_json(LOG_FILE, [])
