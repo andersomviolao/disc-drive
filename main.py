@@ -38,7 +38,7 @@ except Exception:
     winreg = None
 
 APP_NAME = "Webhook-Uploader"
-APP_VERSION = "2.0.9"
+APP_VERSION = "3.0.0"
 BASE_DIR = Path(os.getenv("LOCALAPPDATA", str(Path.home()))) / APP_NAME
 CONFIG_FILE = BASE_DIR / "cfg.json"
 LOG_FILE = BASE_DIR / "log.json"
@@ -1239,8 +1239,6 @@ class PostTemplatePage(PageBase):
         self.editor = QTextEdit()
         self.editor.setPlaceholderText("Digite aqui o conteúdo do post...")
         self.editor.setStyleSheet(self.window.text_edit_style())
-        self.editor.verticalScrollBar().setStyleSheet(self.window.scrollbar_widget_style())
-        self.editor.horizontalScrollBar().setStyleSheet(self.window.scrollbar_widget_style())
         self.editor.textChanged.connect(self.on_editor_text_changed)
         self.body.addWidget(self.editor, 1)
 
@@ -1394,8 +1392,6 @@ class SettingsPage(PageBase):
         self.scroll.setFrameShape(QFrame.NoFrame)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.scroll.setStyleSheet(self.window.scrollbar_style("QScrollArea"))
-        self.scroll.verticalScrollBar().setStyleSheet(self.window.scrollbar_widget_style())
-        self.scroll.horizontalScrollBar().setStyleSheet(self.window.scrollbar_widget_style())
 
         self.scroll_host = QWidget()
         self.scroll_host.setStyleSheet("background: transparent;")
@@ -1550,21 +1546,20 @@ class MainWindow(QWidget):
 
     def scrollbar_style(self, selector="QScrollArea"):
         return f"""
-        {selector} {{ background: transparent; border: none; }}
-        """
-
-    def scrollbar_widget_style(self):
-        return f"""
+        {selector} {{
+            background: transparent;
+            border: none;
+        }}
         QScrollBar:vertical {{
             background: transparent;
             border: none;
-            width: 10px;
-            margin: 6px 2px 6px 0;
+            width: 8px;
+            margin: 6px 0 6px 0;
         }}
         QScrollBar::handle:vertical {{
             background: #2a2d34;
             border: none;
-            border-radius: 5px;
+            border-radius: 4px;
             min-height: 24px;
         }}
         QScrollBar::handle:vertical:hover {{
