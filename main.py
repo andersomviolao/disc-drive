@@ -50,7 +50,7 @@ except Exception:
 
 APP_NAME = "Discord Webhook Uploader"
 APP_DIR_NAME = "discord-webhook-uploader"
-APP_VERSION = "3.0.9"
+APP_VERSION = "3.0.10"
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 BASE_DIR = Path(os.getenv("LOCALAPPDATA", str(Path.home()))) / APP_DIR_NAME
@@ -79,6 +79,12 @@ CARD = "#1a1c20"
 CARD_BORDER = "#252830"
 DEFAULT_EMBED_COLOR = "#F54927"
 
+FONT_TINY = 8
+FONT_BASE = 9
+FONT_MEDIUM = 10
+FONT_LARGE = 11
+FONT_TITLE = 12
+
 DEFAULT_WAIT_TIME = 3600
 DEFAULT_POST_INTERVAL = 10
 MONITOR_CHECK_INTERVAL = 5
@@ -88,7 +94,7 @@ file_lock = threading.RLock()
 debug_lock = threading.RLock()
 send_lock = threading.Lock()
 sending_event = threading.Event()
-monitoring = True
+monitoring = False
 stop_event = threading.Event()
 
 
@@ -346,10 +352,14 @@ def normalize_config(raw):
         "webhook_custom_name": str(raw.get("webhook_custom_name", "") or "").strip(),
         "webhook_default_name": str(raw.get("webhook_default_name", "") or "").strip(),
         "webhook_default_source": str(raw.get("webhook_default_source", "") or "").strip(),
+        "monitoring_enabled": bool(raw.get("monitoring_enabled", True)),
+        "window_x": normalize_int(raw.get("window_x", -1), -1, minimum=-1),
+        "window_y": normalize_int(raw.get("window_y", -1), -1, minimum=-1),
     }
 
 
 config = normalize_config(load_json(CONFIG_FILE, {}))
+monitoring = bool(config.get("monitoring_enabled", True))
 sent_history = load_json(LOG_FILE, [])
 if not isinstance(sent_history, list):
     sent_history = []
@@ -477,6 +487,44 @@ def webhook_defaults_match_current() -> bool:
     return bool(config.get("webhook_default_source", "")) and config.get("webhook_default_source", "") == current_webhook_identity_key()
 
 
+def aspect_fit_rect(target_rect: QRectF, source_width: float, source_height: float) -> QRectF:
+    if source_width <= 0 or source_height <= 0:
+        return target_rect
+    scale = min(target_rect.width() / source_width, target_rect.height() / source_height)
+    width = source_width * scale
+    height = source_height * scale
+    x = target_rect.x() + (target_rect.width() - width) / 2
+    y = target_rect.y() + (target_rect.height() - height) / 2
+    return QRectF(x, y, width, height)
+
+
+def save_window_position(widget):
+    try:
+        config["window_x"] = int(widget.x())
+        config["window_y"] = int(widget.y())
+        save_config()
+        debug_log("window_position_saved", x=config["window_x"], y=config["window_y"])
+    except Exception as exc:
+        debug_log("window_position_save_failed", error=str(exc))
+
+
+def get_saved_window_position():
+    x = normalize_int(config.get("window_x", -1), -1, minimum=-1)
+    y = normalize_int(config.get("window_y", -1), -1, minimum=-1)
+    if x < 0 or y < 0:
+        return None
+    return x, y
+
+
+def clamp_window_position(x: int, y: int, width: int = WINDOW_WIDTH, height: int = WINDOW_HEIGHT):
+    screen = QApplication.primaryScreen().availableGeometry()
+    max_x = max(screen.left(), screen.right() - width + 1)
+    max_y = max(screen.top(), screen.bottom() - height + 1)
+    clamped_x = min(max(x, screen.left()), max_x)
+    clamped_y = min(max(y, screen.top()), max_y)
+    return clamped_x, clamped_y
+
+
 def square_pixmap_from_file(path: Path, size: int = 256):
     pixmap = QPixmap(str(path))
     if pixmap.isNull():
@@ -503,7 +551,9 @@ def build_default_placeholder_pixmap(size: int = 256):
                 if renderer.isValid():
                     margin = max(26, int(size * 0.18))
                     target = QRectF(margin, margin, size - margin * 2, size - margin * 2)
-                    renderer.render(painter, target)
+                    view_box = renderer.viewBoxF()
+                    fitted = aspect_fit_rect(target, view_box.width() or 1.0, view_box.height() or 1.0)
+                    renderer.render(painter, fitted)
                     source = "svg_url"
         except Exception as exc:
             debug_log("default_placeholder_svg_download_failed", error=str(exc), url=DEFAULT_PLACEHOLDER_IMAGE_URL)
@@ -526,22 +576,27 @@ def build_default_placeholder_pixmap(size: int = 256):
     return pixmap, source
 
 
-def ensure_default_profile_image(size: int = 256):
+def ensure_default_profile_image(size: int = 256, force_refresh: bool = True):
     try:
+        existing_valid = False
         if DEFAULT_PLACEHOLDER_IMAGE_FILE.exists():
             current = QPixmap(str(DEFAULT_PLACEHOLDER_IMAGE_FILE))
-            if not current.isNull() and current.width() == size and current.height() == size:
+            existing_valid = (not current.isNull() and current.width() == size and current.height() == size)
+            if existing_valid and not force_refresh:
                 debug_log("default_placeholder_image_ready", path=str(DEFAULT_PLACEHOLDER_IMAGE_FILE), reused=True)
                 return True
 
         pixmap, source = build_default_placeholder_pixmap(size=size)
         DEFAULT_PLACEHOLDER_IMAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
         saved = pixmap.save(str(DEFAULT_PLACEHOLDER_IMAGE_FILE), "PNG")
-        debug_log("default_placeholder_image_saved", path=str(DEFAULT_PLACEHOLDER_IMAGE_FILE), success=saved, source=source, size=size)
-        return bool(saved)
+        if saved:
+            debug_log("default_placeholder_image_saved", path=str(DEFAULT_PLACEHOLDER_IMAGE_FILE), success=True, source=source, size=size)
+            return True
+        debug_log("default_placeholder_image_saved", path=str(DEFAULT_PLACEHOLDER_IMAGE_FILE), success=False, source=source, size=size)
+        return existing_valid
     except Exception as exc:
         debug_log("default_placeholder_image_failed", error=str(exc), path=str(DEFAULT_PLACEHOLDER_IMAGE_FILE))
-        return False
+        return DEFAULT_PLACEHOLDER_IMAGE_FILE.exists()
 
 
 def save_custom_profile_image(source_path: str):
@@ -1125,15 +1180,14 @@ class AvatarPreview(QWidget):
         rect = self.rect().adjusted(1, 1, -1, -1)
         path = QPainterPath()
         path.addEllipse(rect)
+        painter.fillPath(path, QColor(BLUE))
         painter.setClipPath(path)
 
         if self._pixmap is not None and not self._pixmap.isNull():
-            scaled = self._pixmap.scaled(rect.width(), rect.height(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+            scaled = self._pixmap.scaled(rect.width(), rect.height(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
             x = rect.x() + (rect.width() - scaled.width()) // 2
             y = rect.y() + (rect.height() - scaled.height()) // 2
             painter.drawPixmap(x, y, scaled)
-        else:
-            painter.fillPath(path, QColor(BLUE))
 
         painter.setClipping(False)
         border_color = QColor(BLUE if self._hovered else "#2f343d")
@@ -1311,7 +1365,7 @@ class EmbedColorPopup(QWidget):
             }}
             QLabel {{
                 color: {TEXT};
-                font: 700 10px 'Segoe UI';
+                font: 700 9px 'Segoe UI';
                 background: transparent;
                 border: none;
             }}
@@ -1322,7 +1376,7 @@ class EmbedColorPopup(QWidget):
                 border-radius: 12px;
                 padding: 0 12px;
                 min-height: 32px;
-                font: 700 10px 'Segoe UI';
+                font: 700 9px 'Segoe UI';
             }}
             QLineEdit:focus {{
                 border: 1px solid {BLUE};
@@ -1515,12 +1569,12 @@ class PageBase(QWidget):
         top.setSpacing(1)
 
         self.title = QLabel(title)
-        self.title.setStyleSheet(f"color:{BLUE}; font: 700 14px 'Segoe UI';")
+        self.title.setStyleSheet(f"color:{BLUE}; font: 700 12px 'Segoe UI';")
         top.addWidget(self.title)
 
         self.subtitle = QLabel(subtitle)
         self.subtitle.setWordWrap(True)
-        self.subtitle.setStyleSheet(f"color:{MUTED}; font: 500 10px 'Segoe UI';")
+        self.subtitle.setStyleSheet(f"color:{MUTED}; font: 500 9px 'Segoe UI';")
         top.addWidget(self.subtitle)
 
         root.addLayout(top)
@@ -1556,13 +1610,13 @@ class HomeValueRow(QFrame):
         left.setSpacing(2)
 
         self.title_label = QLabel(title)
-        self.title_label.setStyleSheet(f"color:{TEXT}; font: 700 11px 'Segoe UI';")
+        self.title_label.setStyleSheet(f"color:{TEXT}; font: 700 10px 'Segoe UI';")
         left.addWidget(self.title_label)
 
         self.value_label = QLabel("")
         self.value_label.setWordWrap(False)
         self.value_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.value_label.setStyleSheet(f"color:{FIELD_TEXT}; font: 500 10px 'Segoe UI'; background: transparent; border: none;")
+        self.value_label.setStyleSheet(f"color:{FIELD_TEXT}; font: 500 9px 'Segoe UI'; background: transparent; border: none;")
         self.value_label.setMinimumHeight(18)
         left.addWidget(self.value_label)
 
@@ -1576,7 +1630,7 @@ class HomeValueRow(QFrame):
         value = (text or '').strip()
         self.value_label.setText(value if value else placeholder)
         self.value_label.setStyleSheet(
-            f"color:{FIELD_TEXT if value else '#6f7580'}; font: 500 10px 'Segoe UI'; background: transparent; border: none;"
+            f"color:{FIELD_TEXT if value else '#6f7580'}; font: 500 9px 'Segoe UI'; background: transparent; border: none;"
         )
 
 
@@ -1614,7 +1668,7 @@ class HomePage(PageBase):
         bottom.addStretch(1)
         bottom.setSpacing(8)
 
-        self.pause_btn = self.window.make_small_button("Running", self.window.toggle_monitoring, accent=BLUE)
+        self.pause_btn = self.window.make_small_button("Pause", self.window.toggle_monitoring, accent=BLUE)
         self.pause_btn.setFixedSize(102, 30)
         bottom.addWidget(self.pause_btn)
 
@@ -1635,13 +1689,13 @@ class HomePage(PageBase):
 
     def update_pause_visual(self):
         if monitoring:
-            self.pause_btn.setText("Running")
+            self.pause_btn.setText("Pause")
             self.pause_btn.setStyleSheet(self.window.small_button_style(enabled=True, accent=BLUE))
-            self.pause_btn.setToolTip("Pause")
+            self.pause_btn.setToolTip("Pause monitoring")
         else:
-            self.pause_btn.setText("Paused")
+            self.pause_btn.setText("Run")
             self.pause_btn.setStyleSheet(self.window.small_button_style(enabled=True, accent=YELLOW, hover="#ffca52", text_color="#1e1a10"))
-            self.pause_btn.setToolTip("Resume")
+            self.pause_btn.setToolTip("Resume monitoring")
 
 
 class WebhookPage(PageBase):
@@ -1766,11 +1820,13 @@ class PostTemplatePage(PageBase):
         self.name_input.setMinimumHeight(40)
         self.name_input.setStyleSheet(self.window.preview_name_style())
         self.name_input.editingFinished.connect(self.on_name_editing_finished)
+        self.name_input.textChanged.connect(self.on_name_text_changed)
         preview_row.addWidget(self.name_input, 1)
 
-        self.remove_avatar_btn = HoverButton("✕", size=24, tooltip="Remove custom image and custom name", bg="#24272d", hover="#2b3038", fg=TEXT, font_size=8)
-        self.remove_avatar_btn.clicked.connect(self.remove_profile_image)
-        preview_row.addWidget(self.remove_avatar_btn, 0, Qt.AlignVCenter)
+        self.clear_profile_btn = self.window.make_small_button("Clear", self.remove_profile_image)
+        self.clear_profile_btn.setFixedSize(82, 30)
+        self.clear_profile_btn.setToolTip("Clear custom image and custom name")
+        preview_row.addWidget(self.clear_profile_btn, 0, Qt.AlignVCenter)
 
         self.body.addLayout(preview_row)
 
@@ -1783,7 +1839,7 @@ class PostTemplatePage(PageBase):
 
         self.help_label = QLabel("Variables: {filename}  •  {creation_str}  •  {upload_str}")
         self.help_label.setWordWrap(True)
-        self.help_label.setStyleSheet(f"color:{MUTED}; font: 500 9px 'Segoe UI';")
+        self.help_label.setStyleSheet(f"color:{MUTED}; font: 500 8px 'Segoe UI';")
         self.body.addWidget(self.help_label)
 
         buttons = QHBoxLayout()
@@ -1801,7 +1857,7 @@ class PostTemplatePage(PageBase):
         buttons.addStretch(1)
 
         self.timer_label = QLabel("Timer")
-        self.timer_label.setStyleSheet(f"color:{TEXT}; font: 700 10px 'Segoe UI';")
+        self.timer_label.setStyleSheet(f"color:{TEXT}; font: 700 9px 'Segoe UI';")
         buttons.addWidget(self.timer_label, 0, Qt.AlignVCenter)
 
         self.timer_toggle = ToggleSwitch(get_timer_enabled())
@@ -1821,7 +1877,7 @@ class PostTemplatePage(PageBase):
         buttons.addWidget(self.color_btn, 0, Qt.AlignVCenter)
 
         self.embed_label = QLabel("Embed")
-        self.embed_label.setStyleSheet(f"color:{TEXT}; font: 700 10px 'Segoe UI';")
+        self.embed_label.setStyleSheet(f"color:{TEXT}; font: 700 9px 'Segoe UI';")
         buttons.addWidget(self.embed_label, 0, Qt.AlignVCenter)
 
         self.embed_toggle = ToggleSwitch(config.get("use_embed", False))
@@ -1841,7 +1897,7 @@ class PostTemplatePage(PageBase):
         self.timer_input.setVisible(visible)
 
     def update_profile_preview(self):
-        ensure_default_profile_image()
+        ensure_default_profile_image(force_refresh=False)
         if CUSTOM_PROFILE_IMAGE_FILE.exists():
             image_path = str(CUSTOM_PROFILE_IMAGE_FILE)
         elif DEFAULT_PLACEHOLDER_IMAGE_FILE.exists():
@@ -1849,8 +1905,10 @@ class PostTemplatePage(PageBase):
         else:
             image_path = None
         self.avatar_preview.set_image_path(image_path)
-        self.remove_avatar_btn.setVisible(CUSTOM_PROFILE_IMAGE_FILE.exists())
-        default_name = (config.get("webhook_default_name", "") or "").strip() or "discord-webhook-uploader"
+        has_custom_state = CUSTOM_PROFILE_IMAGE_FILE.exists() or bool((self.name_input.text() or "").strip()) or bool(get_custom_webhook_name())
+        self.clear_profile_btn.setEnabled(has_custom_state)
+        self.clear_profile_btn.setStyleSheet(self.window.small_button_style(enabled=has_custom_state, accent=BLUE))
+        default_name = (config.get("webhook_default_name", "") or "").strip() or "webhook-uploader"
         self.name_input.setPlaceholderText(default_name)
 
     def refresh(self):
@@ -1878,9 +1936,16 @@ class PostTemplatePage(PageBase):
         if self._loading:
             return
 
+    def on_name_text_changed(self):
+        if self._loading:
+            return
+        self.update_profile_preview()
+        self.save_template(show_feedback=False)
+
     def on_name_editing_finished(self):
         if self._loading:
             return
+        self.update_profile_preview()
         self.save_template(show_feedback=False)
 
     def on_timer_toggled(self):
@@ -1956,7 +2021,7 @@ class PostTemplatePage(PageBase):
         self.update_profile_preview()
         if (config.get("webhook") or "").strip():
             sync_webhook_avatar(force=True)
-        self.window.show_message("success", "Webhook image and custom name removed.")
+        self.window.show_message("success", "Webhook image and custom name cleared.")
 
     def test_webhook(self):
         ok, msg = send_test_message(self.editor.toPlainText(), self.embed_toggle.isChecked(), webhook_name=self.name_input.text())
@@ -2004,12 +2069,12 @@ class SettingRow(QFrame):
         left.setSpacing(2)
 
         t = QLabel(title)
-        t.setStyleSheet(f"color:{TEXT}; font: 700 11px 'Segoe UI';")
+        t.setStyleSheet(f"color:{TEXT}; font: 700 10px 'Segoe UI';")
         left.addWidget(t)
 
         s = QLabel(subtitle)
         s.setWordWrap(True)
-        s.setStyleSheet(f"color:{MUTED}; font: 500 10px 'Segoe UI';")
+        s.setStyleSheet(f"color:{MUTED}; font: 500 9px 'Segoe UI';")
         left.addWidget(s)
 
         root.addLayout(left, 1)
@@ -2174,7 +2239,7 @@ class MainWindow(QWidget):
         self.message_label = QLabel("")
         self.message_label.setMinimumHeight(16)
         self.message_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.message_label.setStyleSheet(f"color:{MUTED}; font: 600 10px 'Segoe UI';")
+        self.message_label.setStyleSheet(f"color:{MUTED}; font: 600 9px 'Segoe UI';")
         root.addWidget(self.message_label)
 
         self.home_page = HomePage(self)
@@ -2209,7 +2274,7 @@ class MainWindow(QWidget):
             border: 1px solid #2c3038;
             border-radius: 16px;
             padding: 0 14px;
-            font: 600 10px 'Segoe UI';
+            font: 600 9px 'Segoe UI';
         }}
         QLineEdit:focus {{ border: 1px solid {BLUE}; }}
         QLineEdit::placeholder {{ color: #6f7580; }}
@@ -2275,7 +2340,7 @@ class MainWindow(QWidget):
             border: 1px solid #2c3038;
             border-radius: 18px;
             padding: 10px 12px;
-            font: 600 10px 'Segoe UI';
+            font: 600 9px 'Segoe UI';
         }}
         QTextEdit:focus {{ border: 1px solid {BLUE}; }}
         {self.scrollbar_style("QTextEdit")}
@@ -2288,7 +2353,7 @@ class MainWindow(QWidget):
             color: {FIELD_TEXT};
             border: none;
             padding: 0 2px;
-            font: 700 12px 'Segoe UI';
+            font: 700 10px 'Segoe UI';
         }}
         QLineEdit:focus {{
             border: none;
@@ -2306,7 +2371,7 @@ class MainWindow(QWidget):
             border: 1px solid #2c3038;
             border-radius: 12px;
             padding: 0 6px;
-            font: 700 10px 'Segoe UI';
+            font: 700 9px 'Segoe UI';
         }}
         QLineEdit:focus {{ border: 1px solid {BLUE}; }}
         QLineEdit::placeholder {{ color: #6f7580; }}
@@ -2324,7 +2389,7 @@ class MainWindow(QWidget):
                 border: none;
                 border-radius: 13px;
                 padding: 7px 14px;
-                font: 700 10px 'Segoe UI';
+                font: 700 9px 'Segoe UI';
             }}
             QPushButton:hover {{ background: #69adff; }}
             """
@@ -2343,7 +2408,7 @@ class MainWindow(QWidget):
                 border: 1px solid #30343d;
                 border-radius: 13px;
                 padding: 7px 12px;
-                font: 700 10px 'Segoe UI';
+                font: 700 9px 'Segoe UI';
             }}
             QPushButton:hover {{ background: #2b3038; }}
             """
@@ -2372,7 +2437,7 @@ class MainWindow(QWidget):
             border: none;
             border-radius: 12px;
             padding: 7px 12px;
-            font: 700 10px 'Segoe UI';
+            font: 700 9px 'Segoe UI';
         }}
         QPushButton:hover {{ background: {hover}; }}
         """
@@ -2390,13 +2455,15 @@ class MainWindow(QWidget):
         label = QLabel("")
         label.setWordWrap(True)
         label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        label.setStyleSheet(f"color:{TEXT}; font: 600 10px 'Segoe UI'; background: transparent; border: none;")
+        label.setStyleSheet(f"color:{TEXT}; font: 600 9px 'Segoe UI'; background: transparent; border: none;")
         return label
 
     def refresh_all(self):
         debug_log("refresh_all_started")
         self.home_page.refresh()
         self.settings_page.refresh()
+        if hasattr(self, "post_template_page"):
+            self.post_template_page.update_profile_preview()
         debug_log("refresh_all_finished")
 
     def save_post_template_if_needed(self, show_feedback=False):
@@ -2444,7 +2511,7 @@ class MainWindow(QWidget):
             "warning": YELLOW,
             "info": MUTED,
         }
-        self.message_label.setStyleSheet(f"color:{colors.get(kind, MUTED)}; font: 700 11px 'Segoe UI';")
+        self.message_label.setStyleSheet(f"color:{colors.get(kind, MUTED)}; font: 700 9px 'Segoe UI';")
         self.message_label.setText(text)
         self.message_timer.start(4200)
 
@@ -2452,12 +2519,15 @@ class MainWindow(QWidget):
         self.message_label.setText("")
 
     def start_send_now(self):
+        self.save_post_template_if_needed()
         thread = threading.Thread(target=send_now_manual, daemon=True)
         thread.start()
 
     def toggle_monitoring(self):
         global monitoring
         monitoring = not monitoring
+        config["monitoring_enabled"] = monitoring
+        save_config()
         signals.status_changed.emit(monitoring)
 
     def on_status_changed(self, active):
@@ -2499,6 +2569,7 @@ class MainWindow(QWidget):
     def hide_to_tray(self):
         debug_log("hide_to_tray")
         self.save_post_template_if_needed()
+        save_window_position(self)
         self.is_dragging = False
         self.drag_pos = None
         self.hide()
@@ -2507,17 +2578,22 @@ class MainWindow(QWidget):
     def hideEvent(self, event):
         debug_log("main_window_hide_event")
         self.save_post_template_if_needed()
+        save_window_position(self)
         super().hideEvent(event)
 
     def show_near_tray(self):
         debug_log("show_near_tray_started")
         self.refresh_all()
         self.ensure_expected_geometry()
-        screen = QApplication.primaryScreen().availableGeometry()
-        x = screen.right() - WINDOW_WIDTH - 20
-        y = screen.bottom() - WINDOW_HEIGHT - 50
+        saved_pos = get_saved_window_position()
+        if saved_pos is not None:
+            x, y = clamp_window_position(saved_pos[0], saved_pos[1])
+        else:
+            screen = QApplication.primaryScreen().availableGeometry()
+            x = screen.right() - WINDOW_WIDTH - 20
+            y = screen.bottom() - WINDOW_HEIGHT - 50
         set_window_pos_safely(self, x=x, y=y, move=True, resize=False)
-        debug_log("show_near_tray_positioned", x=x, y=y)
+        debug_log("show_near_tray_positioned", x=x, y=y, restored=bool(saved_pos is not None))
         self.show()
         self.raise_()
         self.activateWindow()
@@ -2526,6 +2602,7 @@ class MainWindow(QWidget):
     def exit_app(self):
         debug_log("exit_app_requested")
         self.save_post_template_if_needed()
+        save_window_position(self)
         stop_event.set()
         self.hide()
         self.tray_icon.hide()
@@ -2552,6 +2629,7 @@ class MainWindow(QWidget):
         self.drag_pos = None
         self.is_dragging = False
         self.ensure_expected_geometry()
+        save_window_position(self)
         super().mouseReleaseEvent(event)
 
     def resizeEvent(self, event):
@@ -2602,7 +2680,7 @@ class TrayExitBubble(QWidget):
                 color: {TEXT};
                 border: none;
                 border-radius: 11px;
-                font: 700 10px 'Segoe UI';
+                font: 700 9px 'Segoe UI';
                 padding: 4px 10px;
                 text-align: center;
             }}
@@ -2671,6 +2749,8 @@ class TrayController(QObject):
     def toggle_monitoring(self):
         global monitoring
         monitoring = not monitoring
+        config["monitoring_enabled"] = monitoring
+        save_config()
         signals.status_changed.emit(monitoring)
 
     def open_settings(self):
@@ -2757,6 +2837,7 @@ class TrayController(QObject):
 
     def exit_app(self):
         self.window.save_post_template_if_needed()
+        save_window_position(self.window)
         stop_event.set()
         self.window.hide()
         self.tray.hide()
@@ -2783,7 +2864,7 @@ if __name__ == "__main__":
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
-    ensure_default_profile_image()
+    ensure_default_profile_image(force_refresh=True)
 
     controller = TrayController(app)
     debug_log("application_qt_created")
