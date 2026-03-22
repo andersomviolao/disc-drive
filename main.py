@@ -3,6 +3,7 @@ import os
 import json
 import time
 import math
+import base64
 import colorsys
 import threading
 import requests
@@ -19,7 +20,7 @@ except Exception:
 
 from send2trash import send2trash
 from PySide6.QtCore import Qt, Signal, QObject, QEasingCurve, QPropertyAnimation, QTimer, QRect, QSize
-from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap, QBrush, QLinearGradient
+from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap, QBrush, QLinearGradient, QIntValidator
 from PySide6.QtWidgets import (
     QApplication,
     QWidget,
@@ -45,13 +46,15 @@ except Exception:
 
 APP_NAME = "Discord Webhook Uploader"
 APP_DIR_NAME = "discord-webhook-uploader"
-APP_VERSION = "3.0.6"
+APP_VERSION = "3.0.7"
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 320
 BASE_DIR = Path(os.getenv("LOCALAPPDATA", str(Path.home()))) / APP_DIR_NAME
 CONFIG_FILE = BASE_DIR / "config.json"
 LOG_FILE = BASE_DIR / "sent_log.json"
 DEBUG_FILE = BASE_DIR / "debug.json"
+CUSTOM_PROFILE_IMAGE_FILE = BASE_DIR / "profile-img.png"
+DEFAULT_PROFILE_IMAGE_FILE = BASE_DIR / "webhook-default-avatar.png"
 DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 BG = "#0f1012"
@@ -265,12 +268,26 @@ def save_template(text: str):
     save_config()
 
 
+def get_timer_enabled() -> bool:
+    return bool(config.get("timer_enabled", True))
+
+
+def get_delay_minutes() -> int:
+    return normalize_int(config.get("delay_minutes", max(1, DEFAULT_WAIT_TIME // 60)), max(1, DEFAULT_WAIT_TIME // 60), minimum=1)
+
+
 def get_wait_time_seconds() -> int:
-    return normalize_int(config.get("wait_time_seconds", DEFAULT_WAIT_TIME), DEFAULT_WAIT_TIME, minimum=0)
+    if not get_timer_enabled():
+        return 0
+    return get_delay_minutes() * 60
 
 
 def get_post_interval_seconds() -> int:
     return normalize_int(config.get("post_interval_seconds", DEFAULT_POST_INTERVAL), DEFAULT_POST_INTERVAL, minimum=0)
+
+
+def get_custom_webhook_name() -> str:
+    return str(config.get("webhook_custom_name", "") or "").strip()
 
 
 def parse_hex_color(value: str):
@@ -306,6 +323,8 @@ def render_template_text(template: str, filename: str, creation_str: str, upload
 
 def normalize_config(raw):
     raw = raw if isinstance(raw, dict) else {}
+    legacy_wait_seconds = normalize_int(raw.get("wait_time_seconds", DEFAULT_WAIT_TIME), DEFAULT_WAIT_TIME, minimum=0)
+    default_delay_minutes = max(1, round(legacy_wait_seconds / 60)) if legacy_wait_seconds > 0 else max(1, DEFAULT_WAIT_TIME // 60)
     return {
         "folder": raw.get("folder", ""),
         "webhook": raw.get("webhook", ""),
@@ -314,9 +333,13 @@ def normalize_config(raw):
         "use_embed": bool(raw.get("use_embed", False)),
         "embed_color": normalize_hex_color(raw.get("embed_color", DEFAULT_EMBED_COLOR)),
         "post_template": normalize_multiline_text(raw.get("post_template", default_template_text()), default_template_text()),
-        "wait_time_seconds": normalize_int(raw.get("wait_time_seconds", DEFAULT_WAIT_TIME), DEFAULT_WAIT_TIME, minimum=0),
+        "timer_enabled": bool(raw.get("timer_enabled", legacy_wait_seconds > 0)),
+        "delay_minutes": normalize_int(raw.get("delay_minutes", default_delay_minutes), default_delay_minutes, minimum=1),
         "post_interval_seconds": normalize_int(raw.get("post_interval_seconds", DEFAULT_POST_INTERVAL), DEFAULT_POST_INTERVAL, minimum=0),
         "debug_mode": bool(raw.get("debug_mode", False)),
+        "webhook_custom_name": str(raw.get("webhook_custom_name", "") or "").strip(),
+        "webhook_default_name": str(raw.get("webhook_default_name", "") or "").strip(),
+        "webhook_default_source": str(raw.get("webhook_default_source", "") or "").strip(),
     }
 
 
@@ -429,6 +452,156 @@ def save_config():
     signals.refresh_fields.emit()
 
 
+_last_avatar_sync_key = None
+
+
+def reset_avatar_sync_cache():
+    global _last_avatar_sync_key
+    _last_avatar_sync_key = None
+
+
+def current_webhook_identity_key(webhook_url: str | None = None) -> str:
+    webhook_url = (webhook_url or config.get("webhook", "") or "").strip()
+    if not webhook_url:
+        return ""
+    return hashlib.sha256(webhook_url.encode("utf-8")).hexdigest()
+
+
+def webhook_defaults_match_current() -> bool:
+    return bool(config.get("webhook_default_source", "")) and config.get("webhook_default_source", "") == current_webhook_identity_key()
+
+
+def square_pixmap_from_file(path: Path, size: int = 256):
+    pixmap = QPixmap(str(path))
+    if pixmap.isNull():
+        return None
+    scaled = pixmap.scaled(size, size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+    x = max(0, (scaled.width() - size) // 2)
+    y = max(0, (scaled.height() - size) // 2)
+    return scaled.copy(x, y, size, size)
+
+
+def save_custom_profile_image(source_path: str):
+    source = Path(source_path)
+    cropped = square_pixmap_from_file(source, size=256)
+    if cropped is None:
+        return False, "Could not open the selected image."
+    CUSTOM_PROFILE_IMAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    if not cropped.save(str(CUSTOM_PROFILE_IMAGE_FILE), "PNG"):
+        return False, "Could not save the profile image."
+    reset_avatar_sync_cache()
+    debug_log("custom_profile_image_saved", source=str(source), target=str(CUSTOM_PROFILE_IMAGE_FILE))
+    return True, str(CUSTOM_PROFILE_IMAGE_FILE)
+
+
+def remove_custom_profile_image():
+    removed = False
+    try:
+        if CUSTOM_PROFILE_IMAGE_FILE.exists():
+            CUSTOM_PROFILE_IMAGE_FILE.unlink()
+            removed = True
+    except Exception as exc:
+        debug_log("remove_custom_profile_image_failed", error=str(exc))
+        return False
+    reset_avatar_sync_cache()
+    debug_log("custom_profile_image_removed", removed=removed)
+    return True
+
+
+def image_file_to_data_uri(path: Path):
+    try:
+        if not path.exists():
+            return None
+        raw = path.read_bytes()
+        encoded = base64.b64encode(raw).decode("ascii")
+        return f"data:image/png;base64,{encoded}"
+    except Exception as exc:
+        debug_log("image_file_to_data_uri_failed", path=str(path), error=str(exc))
+        return None
+
+
+def capture_webhook_defaults(webhook_url: str | None = None):
+    webhook_url = (webhook_url or config.get("webhook", "") or "").strip()
+    if not webhook_url:
+        return False
+    identity_key = current_webhook_identity_key(webhook_url)
+    try:
+        response = requests.get(webhook_url, timeout=12)
+        if response.status_code != 200:
+            debug_log("capture_webhook_defaults_failed", status_code=response.status_code)
+            return False
+        data = response.json() if response.content else {}
+        config["webhook_default_name"] = str(data.get("name") or "").strip()
+        avatar_hash = data.get("avatar")
+        DEFAULT_PROFILE_IMAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        if avatar_hash and data.get("id"):
+            avatar_url = f"https://cdn.discordapp.com/avatars/{data.get('id')}/{avatar_hash}.png?size=256"
+            avatar_response = requests.get(avatar_url, timeout=12)
+            if avatar_response.status_code == 200 and avatar_response.content:
+                DEFAULT_PROFILE_IMAGE_FILE.write_bytes(avatar_response.content)
+                debug_log("capture_webhook_defaults_avatar_saved", avatar_url=avatar_url)
+            else:
+                if DEFAULT_PROFILE_IMAGE_FILE.exists():
+                    DEFAULT_PROFILE_IMAGE_FILE.unlink()
+                debug_log("capture_webhook_defaults_avatar_missing", status_code=avatar_response.status_code)
+        else:
+            if DEFAULT_PROFILE_IMAGE_FILE.exists():
+                DEFAULT_PROFILE_IMAGE_FILE.unlink()
+            debug_log("capture_webhook_defaults_avatar_none")
+        config["webhook_default_source"] = identity_key
+        save_config()
+        debug_log("capture_webhook_defaults_finished", webhook_default_name=config.get("webhook_default_name", ""))
+        return True
+    except Exception as exc:
+        debug_log("capture_webhook_defaults_exception", error=str(exc))
+        return False
+
+
+def get_avatar_sync_key() -> str:
+    webhook_key = current_webhook_identity_key()
+    if not webhook_key:
+        return ""
+    if CUSTOM_PROFILE_IMAGE_FILE.exists():
+        source = f"custom:{CUSTOM_PROFILE_IMAGE_FILE.stat().st_mtime_ns}"
+    elif webhook_defaults_match_current() and DEFAULT_PROFILE_IMAGE_FILE.exists():
+        source = f"default:{DEFAULT_PROFILE_IMAGE_FILE.stat().st_mtime_ns}"
+    else:
+        source = "default:none"
+    return f"{webhook_key}|{source}"
+
+
+def sync_webhook_avatar(force: bool = False):
+    global _last_avatar_sync_key
+    webhook_url = (config.get("webhook", "") or "").strip()
+    if not webhook_url:
+        return False
+    if not webhook_defaults_match_current():
+        capture_webhook_defaults(webhook_url)
+    sync_key = get_avatar_sync_key()
+    if sync_key and not force and _last_avatar_sync_key == sync_key:
+        return True
+    if CUSTOM_PROFILE_IMAGE_FILE.exists():
+        avatar_payload = image_file_to_data_uri(CUSTOM_PROFILE_IMAGE_FILE)
+        source = "custom"
+    elif webhook_defaults_match_current() and DEFAULT_PROFILE_IMAGE_FILE.exists():
+        avatar_payload = image_file_to_data_uri(DEFAULT_PROFILE_IMAGE_FILE)
+        source = "default"
+    else:
+        avatar_payload = None
+        source = "none"
+    try:
+        response = requests.patch(webhook_url, json={"avatar": avatar_payload}, timeout=15)
+        if response.status_code in (200, 204):
+            _last_avatar_sync_key = sync_key
+            debug_log("sync_webhook_avatar_finished", success=True, source=source, status_code=response.status_code)
+            return True
+        debug_log("sync_webhook_avatar_finished", success=False, source=source, status_code=response.status_code)
+        return False
+    except Exception as exc:
+        debug_log("sync_webhook_avatar_exception", error=str(exc), source=source)
+        return False
+
+
 def get_startup_command() -> str:
     script_path = Path(sys.argv[0]).resolve()
     if getattr(sys, "frozen", False):
@@ -497,7 +670,8 @@ def is_embed_image_file(filename: str) -> bool:
     return Path(filename).suffix.lower() in {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 
 
-def build_message_payload(message: str, use_embed: bool, embed_color: str, filename: str | None = None):
+def build_message_payload(message: str, use_embed: bool, embed_color: str, filename: str | None = None, username: str | None = None):
+    username = (username or "").strip()
     if use_embed:
         embed = {
             "description": clip_embed_description(message),
@@ -505,8 +679,14 @@ def build_message_payload(message: str, use_embed: bool, embed_color: str, filen
         }
         if filename and is_embed_image_file(filename):
             embed["image"] = {"url": f"attachment://{filename}"}
-        return {"payload_json": json.dumps({"embeds": [embed]}, ensure_ascii=False)}
-    return {"content": message}
+        payload = {"embeds": [embed]}
+        if username:
+            payload["username"] = username
+        return {"payload_json": json.dumps(payload, ensure_ascii=False)}
+    payload = {"content": message}
+    if username:
+        payload["username"] = username
+    return payload
 
 
 def build_test_message(template_text: str | None = None) -> str:
@@ -517,17 +697,19 @@ def build_test_message(template_text: str | None = None) -> str:
     return render_template_text(template, "example.png", now_str, now_str)
 
 
-def send_test_message(template_text: str | None = None, use_embed: bool | None = None):
+def send_test_message(template_text: str | None = None, use_embed: bool | None = None, webhook_name: str | None = None):
     debug_log("send_test_message_started")
     webhook = (config.get("webhook") or "").strip()
     if not webhook:
         debug_log("send_test_message_blocked", reason="missing_webhook")
         return False, "Enter a webhook before testing."
 
+    sync_webhook_avatar()
     message = build_test_message(template_text)
     use_embed = bool(config.get("use_embed", False)) if use_embed is None else bool(use_embed)
     embed_color = normalize_hex_color(config.get("embed_color", DEFAULT_EMBED_COLOR))
-    payload = build_message_payload(message, use_embed, embed_color)
+    display_name = get_custom_webhook_name() if webhook_name is None else str(webhook_name or "").strip()
+    payload = build_message_payload(message, use_embed, embed_color, username=display_name or None)
 
     try:
         res = requests.post(webhook, data=payload, timeout=12)
@@ -603,10 +785,12 @@ def send_file(path):
         creation_str = f"{DAYS_OF_WEEK[creation_dt.weekday()]}, {creation_dt.strftime('%d/%m/%y %H:%M:%S')}"
         upload_str = f"{DAYS_OF_WEEK[now_dt.weekday()]}, {now_dt.strftime('%d/%m/%y %H:%M:%S')}"
 
+        sync_webhook_avatar()
         template = load_template()
         message = render_template_text(template, filename, creation_str, upload_str)
         use_embed = bool(config.get("use_embed", False))
         embed_color = normalize_hex_color(config.get("embed_color", DEFAULT_EMBED_COLOR))
+        display_name = get_custom_webhook_name()
 
         for attempt in range(4):
             try:
@@ -614,7 +798,7 @@ def send_file(path):
                 with open(path, "rb") as f:
                     sending_event.set()
                     try:
-                        payload = build_message_payload(message, use_embed, embed_color, filename=filename)
+                        payload = build_message_payload(message, use_embed, embed_color, filename=filename, username=display_name or None)
                         res = requests.post(
                             webhook,
                             data=payload,
@@ -838,6 +1022,62 @@ class ColorSwatchButton(QPushButton):
         self._hovered = False
         self.apply_style()
         super().leaveEvent(event)
+
+
+class AvatarPreview(QWidget):
+    clicked = Signal()
+
+    def __init__(self, size=44, parent=None):
+        super().__init__(parent)
+        self._size = size
+        self._pixmap = None
+        self._hovered = False
+        self.setFixedSize(size, size)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setToolTip("Choose custom webhook image")
+
+    def set_image_path(self, image_path: str | None):
+        pixmap = QPixmap(str(image_path)) if image_path else QPixmap()
+        self._pixmap = pixmap if not pixmap.isNull() else None
+        self.update()
+
+    def enterEvent(self, event):
+        self._hovered = True
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self._hovered = False
+        self.update()
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = self.rect().adjusted(1, 1, -1, -1)
+        path = QPainterPath()
+        path.addEllipse(rect)
+        painter.setClipPath(path)
+
+        if self._pixmap is not None and not self._pixmap.isNull():
+            scaled = self._pixmap.scaled(rect.width(), rect.height(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+            x = rect.x() + (rect.width() - scaled.width()) // 2
+            y = rect.y() + (rect.height() - scaled.height()) // 2
+            painter.drawPixmap(x, y, scaled)
+        else:
+            painter.fillPath(path, QColor("#7ca83c"))
+
+        painter.setClipping(False)
+        border_color = QColor(BLUE if self._hovered else "#2f343d")
+        painter.setPen(QPen(border_color, 2))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawEllipse(rect)
+        painter.end()
 
 
 class ColorSpectrumBox(QWidget):
@@ -1372,7 +1612,11 @@ class WebhookPage(PageBase):
             self.window.show_message("error", "Paste a valid webhook URL.")
             return
         config["webhook"] = text
+        reset_avatar_sync_cache()
         save_config()
+        capture_webhook_defaults(text)
+        if CUSTOM_PROFILE_IMAGE_FILE.exists():
+            sync_webhook_avatar(force=True)
         self.window.show_message("success", "Webhook updated.")
         self.window.go_home()
 
@@ -1443,12 +1687,35 @@ class PostTemplatePage(PageBase):
         super().__init__("Customize Post", "Edit the raw content that will be sent together with the file on Discord.")
         self.window = window
         self._loading = False
-        self.body.addSpacing(6)
+        self.color_popup = None
+        self.body.addSpacing(4)
+
+        preview_row = QHBoxLayout()
+        preview_row.setContentsMargins(0, 0, 0, 0)
+        preview_row.setSpacing(10)
+
+        self.avatar_preview = AvatarPreview(44)
+        self.avatar_preview.clicked.connect(self.choose_profile_image)
+        preview_row.addWidget(self.avatar_preview, 0, Qt.AlignVCenter)
+
+        self.name_input = QLineEdit()
+        self.name_input.setPlaceholderText("discord-webhook-uploader")
+        self.name_input.setMinimumHeight(40)
+        self.name_input.setStyleSheet(self.window.preview_name_style())
+        self.name_input.editingFinished.connect(self.on_name_editing_finished)
+        preview_row.addWidget(self.name_input, 1)
+
+        self.remove_avatar_btn = HoverButton("✕", size=24, tooltip="Remove custom image", bg="#24272d", hover="#2b3038", fg=TEXT, font_size=8)
+        self.remove_avatar_btn.clicked.connect(self.remove_profile_image)
+        preview_row.addWidget(self.remove_avatar_btn, 0, Qt.AlignVCenter)
+
+        self.body.addLayout(preview_row)
 
         self.editor = QTextEdit()
         self.editor.setPlaceholderText("Type the post content here...")
         self.editor.setStyleSheet(self.window.text_edit_style())
         self.editor.textChanged.connect(self.on_editor_text_changed)
+        self.editor.setMinimumHeight(108)
         self.body.addWidget(self.editor, 1)
 
         self.help_label = QLabel("Variables: {filename}  •  {creation_str}  •  {upload_str}")
@@ -1456,19 +1723,35 @@ class PostTemplatePage(PageBase):
         self.help_label.setStyleSheet(f"color:{MUTED}; font: 500 9px 'Segoe UI';")
         self.body.addWidget(self.help_label)
 
-
         buttons = QHBoxLayout()
         buttons.setContentsMargins(0, 0, 0, 0)
         buttons.setSpacing(8)
 
         self.back_btn = self.window.make_secondary_button("← Back", self.back_to_settings)
+        self.back_btn.setFixedSize(88, 30)
         buttons.addWidget(self.back_btn)
 
         self.test_btn = self.window.make_small_button("Test Webhook", self.test_webhook)
+        self.test_btn.setFixedSize(108, 30)
         buttons.addWidget(self.test_btn)
+
         buttons.addStretch(1)
 
-        self.color_popup = None
+        self.timer_label = QLabel("Timer")
+        self.timer_label.setStyleSheet(f"color:{TEXT}; font: 700 10px 'Segoe UI';")
+        buttons.addWidget(self.timer_label, 0, Qt.AlignVCenter)
+
+        self.timer_toggle = ToggleSwitch(get_timer_enabled())
+        self.timer_toggle.clicked.connect(self.on_timer_toggled)
+        buttons.addWidget(self.timer_toggle, 0, Qt.AlignVCenter)
+
+        self.timer_input = QLineEdit()
+        self.timer_input.setValidator(QIntValidator(1, 999999, self))
+        self.timer_input.setAlignment(Qt.AlignCenter)
+        self.timer_input.setFixedSize(42, 28)
+        self.timer_input.setStyleSheet(self.window.compact_input_style())
+        self.timer_input.editingFinished.connect(self.on_timer_input_finished)
+        buttons.addWidget(self.timer_input, 0, Qt.AlignVCenter)
 
         self.color_btn = ColorSwatchButton(config.get("embed_color", DEFAULT_EMBED_COLOR))
         self.color_btn.clicked.connect(self.toggle_embed_color_popup)
@@ -1484,9 +1767,31 @@ class PostTemplatePage(PageBase):
 
         self.body.addLayout(buttons)
 
+    def current_delay_minutes(self) -> int:
+        text = (self.timer_input.text() or "").strip()
+        if text.isdigit():
+            return max(1, int(text))
+        return get_delay_minutes()
+
+    def update_timer_visibility(self):
+        visible = self.timer_toggle.isChecked()
+        self.timer_input.setVisible(visible)
+
+    def update_profile_preview(self):
+        image_path = str(CUSTOM_PROFILE_IMAGE_FILE) if CUSTOM_PROFILE_IMAGE_FILE.exists() else None
+        self.avatar_preview.set_image_path(image_path)
+        self.remove_avatar_btn.setVisible(CUSTOM_PROFILE_IMAGE_FILE.exists())
+        default_name = (config.get("webhook_default_name", "") or "").strip() or "discord-webhook-uploader"
+        self.name_input.setPlaceholderText(default_name)
+
     def refresh(self):
         self._loading = True
         self.editor.setPlainText(load_template())
+        self.name_input.setText(get_custom_webhook_name())
+        self.timer_toggle.setChecked(get_timer_enabled())
+        self.timer_input.setText(str(get_delay_minutes()))
+        self.update_timer_visibility()
+        self.update_profile_preview()
         self.embed_toggle.setChecked(bool(config.get("use_embed", False)))
         self.color_btn.set_color(config.get("embed_color", DEFAULT_EMBED_COLOR))
         if self.color_popup is not None and self.color_popup.isVisible():
@@ -1500,10 +1805,26 @@ class PostTemplatePage(PageBase):
         cursor.movePosition(cursor.MoveOperation.End)
         self.editor.setTextCursor(cursor)
 
-
     def on_editor_text_changed(self):
         if self._loading:
             return
+
+    def on_name_editing_finished(self):
+        if self._loading:
+            return
+        self.save_template(show_feedback=False)
+
+    def on_timer_toggled(self):
+        self.update_timer_visibility()
+        if self.timer_toggle.isChecked() and not self.timer_input.text().strip():
+            self.timer_input.setText(str(get_delay_minutes()))
+        self.save_template(show_feedback=False)
+
+    def on_timer_input_finished(self):
+        if self._loading:
+            return
+        self.timer_input.setText(str(self.current_delay_minutes()))
+        self.save_template(show_feedback=False)
 
     def toggle_embed(self):
         config["use_embed"] = self.embed_toggle.isChecked()
@@ -1533,15 +1854,53 @@ class PostTemplatePage(PageBase):
         save_config()
         self.color_btn.set_color(normalized)
 
+    def choose_profile_image(self):
+        start_dir = str(Path.home())
+        selected, _ = QFileDialog.getOpenFileName(
+            self.window,
+            "Choose Webhook Profile Image",
+            start_dir,
+            "Images (*.png *.jpg *.jpeg *.webp *.gif *.bmp)"
+        )
+        if not selected:
+            return
+        ok, message = save_custom_profile_image(selected)
+        if not ok:
+            self.window.show_message("error", message)
+            return
+        self.save_template(show_feedback=False)
+        self.update_profile_preview()
+        if (config.get("webhook") or "").strip():
+            sync_webhook_avatar(force=True)
+        self.window.show_message("success", "Webhook image updated.")
+
+    def remove_profile_image(self):
+        if not CUSTOM_PROFILE_IMAGE_FILE.exists():
+            return
+        if not remove_custom_profile_image():
+            self.window.show_message("error", "Could not remove the webhook image.")
+            return
+        self.save_template(show_feedback=False)
+        self.update_profile_preview()
+        if (config.get("webhook") or "").strip():
+            sync_webhook_avatar(force=True)
+        self.window.show_message("success", "Webhook image removed.")
+
     def test_webhook(self):
-        ok, msg = send_test_message(self.editor.toPlainText(), self.embed_toggle.isChecked())
+        ok, msg = send_test_message(self.editor.toPlainText(), self.embed_toggle.isChecked(), webhook_name=self.name_input.text())
         self.window.show_message("success" if ok else "error", msg)
 
     def save_template(self, show_feedback=False):
-        text = self.editor.toPlainText().replace("\r\n", "\n")
-        save_template(text)
+        if self.color_popup is not None and self.color_popup.isVisible():
+            self.color_popup.commit_and_close()
+        config["post_template"] = normalize_multiline_text(self.editor.toPlainText(), default_template_text())
+        config["webhook_custom_name"] = str(self.name_input.text() or "").strip()
+        config["timer_enabled"] = self.timer_toggle.isChecked()
+        config["delay_minutes"] = self.current_delay_minutes()
+        debug_log("save_post_page_state", timer_enabled=config["timer_enabled"], delay_minutes=config["delay_minutes"], webhook_custom_name=config["webhook_custom_name"])
+        save_config()
         if show_feedback:
-            self.window.show_message("success", "Post saved to config.json.")
+            self.window.show_message("success", "Post settings saved.")
 
     def back_to_settings(self):
         self.save_template(show_feedback=True)
@@ -1624,7 +1983,7 @@ class SettingsPage(PageBase):
         post_layout.setContentsMargins(0, 0, 0, 0)
         self.post_btn = self.window.make_small_button("Edit Post", self.window.open_post_template_page)
         post_layout.addWidget(self.post_btn)
-        self.scroll_body.addWidget(SettingRow("Customize Post", "Opens a page to edit the post text, choose the embed color, and save everything to config.json.", post_wrap))
+        self.scroll_body.addWidget(SettingRow("Customize Post", "Opens a page to edit the post text, timer, webhook name, webhook image, and embed settings.", post_wrap))
 
         clear_wrap = QWidget()
         clear_wrap.setStyleSheet("background: transparent;")
@@ -1644,11 +2003,16 @@ class SettingsPage(PageBase):
 
         self.version_value = self.window.make_info_value()
         self.scroll_body.addWidget(SettingRow("App Version", "Current version in use.", self.version_value))
+
+        self.debug_toggle = ToggleSwitch(config.get("debug_mode", False))
+        self.debug_toggle.clicked.connect(self.toggle_debug_mode)
+        self.scroll_body.addWidget(SettingRow("Debug Mode", "Prints debug logs in the console and writes debug.json while active.", self.debug_toggle))
         self.scroll_body.addStretch(1)
 
     def refresh(self):
         self.start_toggle.setChecked(config.get("start_with_windows", False))
         self.delete_toggle.setChecked(config.get("delete_after_send", True))
+        self.debug_toggle.setChecked(config.get("debug_mode", False))
         self.version_value.setText(APP_VERSION)
 
     def toggle_startup(self):
@@ -1673,6 +2037,13 @@ class SettingsPage(PageBase):
         debug_log("clear_log_requested")
         clear_sent_log()
         self.window.show_message("success", "Send log cleared.")
+
+    def toggle_debug_mode(self):
+        config["debug_mode"] = self.debug_toggle.isChecked()
+        save_config()
+        if config.get("debug_mode", False):
+            init_debug_session()
+        self.window.show_message("success", "Debug mode updated.")
 
     def open_config_folder(self):
         debug_log("open_config_folder_requested")
@@ -1836,6 +2207,37 @@ class MainWindow(QWidget):
         }}
         QTextEdit:focus {{ border: 1px solid {BLUE}; }}
         {self.scrollbar_style("QTextEdit")}
+        """
+
+    def preview_name_style(self):
+        return f"""
+        QLineEdit {{
+            background: transparent;
+            color: {FIELD_TEXT};
+            border: none;
+            padding: 0 2px;
+            font: 700 12px 'Segoe UI';
+        }}
+        QLineEdit:focus {{
+            border: none;
+        }}
+        QLineEdit::placeholder {{
+            color: {FIELD_TEXT};
+        }}
+        """
+
+    def compact_input_style(self):
+        return f"""
+        QLineEdit {{
+            background: {FIELD_BG};
+            color: {FIELD_TEXT};
+            border: 1px solid #2c3038;
+            border-radius: 12px;
+            padding: 0 6px;
+            font: 700 10px 'Segoe UI';
+        }}
+        QLineEdit:focus {{ border: 1px solid {BLUE}; }}
+        QLineEdit::placeholder {{ color: #6f7580; }}
         """
 
     def make_primary_button(self, text, handler):
