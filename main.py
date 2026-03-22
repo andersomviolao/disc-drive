@@ -39,7 +39,9 @@ except Exception:
 
 APP_NAME = "Discord Webhook Uploader"
 APP_DIR_NAME = "discord-webhook-uploader"
-APP_VERSION = "3.0.1"
+APP_VERSION = "3.0.2"
+WINDOW_WIDTH = 560
+WINDOW_HEIGHT = 320
 BASE_DIR = Path(os.getenv("LOCALAPPDATA", str(Path.home()))) / APP_DIR_NAME
 CONFIG_FILE = BASE_DIR / "config.json"
 LOG_FILE = BASE_DIR / "sent_log.json"
@@ -1486,11 +1488,16 @@ class MainWindow(QWidget):
         super().__init__()
         self.tray_icon = tray_icon
         self.drag_pos = None
+        self.is_dragging = False
         self.anim = None
+        self._geometry_fix_pending = False
+        self._enforcing_geometry = False
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setFixedSize(560, 320)
+        self.setMinimumSize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMaximumSize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(12, 12, 12, 12)
@@ -1765,8 +1772,35 @@ class MainWindow(QWidget):
         else:
             self.show_near_tray()
 
+    def ensure_expected_geometry(self):
+        if self._enforcing_geometry:
+            return
+        self._enforcing_geometry = True
+        try:
+            if self.windowState() != Qt.WindowNoState:
+                self.setWindowState(Qt.WindowNoState)
+            if self.minimumWidth() != WINDOW_WIDTH or self.minimumHeight() != WINDOW_HEIGHT:
+                self.setMinimumSize(WINDOW_WIDTH, WINDOW_HEIGHT)
+            if self.maximumWidth() != WINDOW_WIDTH or self.maximumHeight() != WINDOW_HEIGHT:
+                self.setMaximumSize(WINDOW_WIDTH, WINDOW_HEIGHT)
+            if self.width() != WINDOW_WIDTH or self.height() != WINDOW_HEIGHT:
+                self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        finally:
+            self._enforcing_geometry = False
+
+    def schedule_geometry_fix(self):
+        if self._geometry_fix_pending:
+            return
+        self._geometry_fix_pending = True
+        QTimer.singleShot(0, self.apply_scheduled_geometry_fix)
+
+    def apply_scheduled_geometry_fix(self):
+        self._geometry_fix_pending = False
+        self.ensure_expected_geometry()
+
     def hide_to_tray(self):
         self.save_post_template_if_needed()
+        self.is_dragging = False
         self.hide()
         self.clear_message()
 
@@ -1776,13 +1810,15 @@ class MainWindow(QWidget):
 
     def show_near_tray(self):
         self.refresh_all()
+        self.ensure_expected_geometry()
         screen = QApplication.primaryScreen().availableGeometry()
-        x = screen.right() - self.width() - 20
-        y = screen.bottom() - self.height() - 50
+        x = screen.right() - WINDOW_WIDTH - 20
+        y = screen.bottom() - WINDOW_HEIGHT - 50
         self.move(x, y)
         self.show()
         self.raise_()
         self.activateWindow()
+        self.schedule_geometry_fix()
 
     def exit_app(self):
         self.save_post_template_if_needed()
@@ -1794,6 +1830,7 @@ class MainWindow(QWidget):
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            self.is_dragging = True
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
@@ -1803,7 +1840,25 @@ class MainWindow(QWidget):
 
     def mouseReleaseEvent(self, event):
         self.drag_pos = None
+        self.is_dragging = False
+        self.schedule_geometry_fix()
         super().mouseReleaseEvent(event)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self._enforcing_geometry:
+            return
+        if event.size().width() != WINDOW_WIDTH or event.size().height() != WINDOW_HEIGHT:
+            self.schedule_geometry_fix()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == event.Type.WindowStateChange and self.windowState() != Qt.WindowNoState:
+            self.schedule_geometry_fix()
+
+    def showEvent(self, event):
+        self.ensure_expected_geometry()
+        super().showEvent(event)
 
 
 class TrayExitBubble(QWidget):
@@ -1921,6 +1976,9 @@ class TrayController(QObject):
         self.refresh_tray_icon(force=True)
 
     def on_focus_changed(self, old, now):
+        if self.window.is_dragging:
+            self.focus_loss_timer.stop()
+            return
         if now is None:
             self.focus_loss_timer.start()
         else:
@@ -1939,12 +1997,16 @@ class TrayController(QObject):
         return managed
 
     def hide_interface_to_tray(self):
+        if self.window.is_dragging:
+            return
         for widget in self.iter_managed_windows():
             if widget is not self.window:
                 widget.hide()
         self.window.hide_to_tray()
 
     def handle_focus_loss(self):
+        if self.window.is_dragging:
+            return
         visible_windows = [widget for widget in self.iter_managed_windows() if widget.isVisible()]
         if not visible_windows:
             return
