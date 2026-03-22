@@ -19,8 +19,12 @@ except Exception:
     ctypes = None
 
 from send2trash import send2trash
-from PySide6.QtCore import Qt, Signal, QObject, QEasingCurve, QPropertyAnimation, QTimer, QRect, QSize
+from PySide6.QtCore import Qt, Signal, QObject, QEasingCurve, QPropertyAnimation, QTimer, QRect, QSize, QRectF, QByteArray
 from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap, QBrush, QLinearGradient, QIntValidator
+try:
+    from PySide6.QtSvg import QSvgRenderer
+except Exception:
+    QSvgRenderer = None
 from PySide6.QtWidgets import (
     QApplication,
     QWidget,
@@ -46,7 +50,7 @@ except Exception:
 
 APP_NAME = "Discord Webhook Uploader"
 APP_DIR_NAME = "discord-webhook-uploader"
-APP_VERSION = "3.0.8"
+APP_VERSION = "3.0.9"
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 BASE_DIR = Path(os.getenv("LOCALAPPDATA", str(Path.home()))) / APP_DIR_NAME
@@ -54,7 +58,9 @@ CONFIG_FILE = BASE_DIR / "config.json"
 LOG_FILE = BASE_DIR / "sent_log.json"
 DEBUG_FILE = BASE_DIR / "debug.json"
 CUSTOM_PROFILE_IMAGE_FILE = BASE_DIR / "profile-img.png"
-DEFAULT_PROFILE_IMAGE_FILE = BASE_DIR / "webhook-default-avatar.png"
+DEFAULT_PLACEHOLDER_IMAGE_FILE = BASE_DIR / "default-img.png"
+DEFAULT_PLACEHOLDER_IMAGE_URL = "https://cdn.prod.website-files.com/6257adef93867e50d84d30e2/66e278299a53f5bf88615e90_Symbol.svg"
+WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE = BASE_DIR / "webhook-default-avatar.png"
 DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 BG = "#0f1012"
@@ -481,6 +487,63 @@ def square_pixmap_from_file(path: Path, size: int = 256):
     return scaled.copy(x, y, size, size)
 
 
+def build_default_placeholder_pixmap(size: int = 256):
+    pixmap = QPixmap(size, size)
+    pixmap.fill(QColor(BLUE))
+
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+
+    source = "fallback"
+    if QSvgRenderer is not None:
+        try:
+            response = requests.get(DEFAULT_PLACEHOLDER_IMAGE_URL, timeout=15)
+            if response.status_code == 200 and response.content:
+                renderer = QSvgRenderer(QByteArray(response.content))
+                if renderer.isValid():
+                    margin = max(26, int(size * 0.18))
+                    target = QRectF(margin, margin, size - margin * 2, size - margin * 2)
+                    renderer.render(painter, target)
+                    source = "svg_url"
+        except Exception as exc:
+            debug_log("default_placeholder_svg_download_failed", error=str(exc), url=DEFAULT_PLACEHOLDER_IMAGE_URL)
+
+    if source == "fallback":
+        ring_pen = QPen(QColor("#ffffff"))
+        ring_pen.setWidth(max(10, size // 18))
+        painter.setPen(ring_pen)
+        painter.setBrush(Qt.NoBrush)
+        inset = max(36, int(size * 0.2))
+        painter.drawEllipse(inset, inset, size - inset * 2, size - inset * 2)
+
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor("#ffffff"))
+        dot = max(18, size // 11)
+        center = size // 2
+        painter.drawEllipse(center - dot // 2, center - dot // 2, dot, dot)
+
+    painter.end()
+    return pixmap, source
+
+
+def ensure_default_profile_image(size: int = 256):
+    try:
+        if DEFAULT_PLACEHOLDER_IMAGE_FILE.exists():
+            current = QPixmap(str(DEFAULT_PLACEHOLDER_IMAGE_FILE))
+            if not current.isNull() and current.width() == size and current.height() == size:
+                debug_log("default_placeholder_image_ready", path=str(DEFAULT_PLACEHOLDER_IMAGE_FILE), reused=True)
+                return True
+
+        pixmap, source = build_default_placeholder_pixmap(size=size)
+        DEFAULT_PLACEHOLDER_IMAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        saved = pixmap.save(str(DEFAULT_PLACEHOLDER_IMAGE_FILE), "PNG")
+        debug_log("default_placeholder_image_saved", path=str(DEFAULT_PLACEHOLDER_IMAGE_FILE), success=saved, source=source, size=size)
+        return bool(saved)
+    except Exception as exc:
+        debug_log("default_placeholder_image_failed", error=str(exc), path=str(DEFAULT_PLACEHOLDER_IMAGE_FILE))
+        return False
+
+
 def save_custom_profile_image(source_path: str):
     source = Path(source_path)
     cropped = square_pixmap_from_file(source, size=256)
@@ -533,20 +596,20 @@ def capture_webhook_defaults(webhook_url: str | None = None):
         data = response.json() if response.content else {}
         config["webhook_default_name"] = str(data.get("name") or "").strip()
         avatar_hash = data.get("avatar")
-        DEFAULT_PROFILE_IMAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
         if avatar_hash and data.get("id"):
             avatar_url = f"https://cdn.discordapp.com/avatars/{data.get('id')}/{avatar_hash}.png?size=256"
             avatar_response = requests.get(avatar_url, timeout=12)
             if avatar_response.status_code == 200 and avatar_response.content:
-                DEFAULT_PROFILE_IMAGE_FILE.write_bytes(avatar_response.content)
+                WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE.write_bytes(avatar_response.content)
                 debug_log("capture_webhook_defaults_avatar_saved", avatar_url=avatar_url)
             else:
-                if DEFAULT_PROFILE_IMAGE_FILE.exists():
-                    DEFAULT_PROFILE_IMAGE_FILE.unlink()
+                if WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE.exists():
+                    WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE.unlink()
                 debug_log("capture_webhook_defaults_avatar_missing", status_code=avatar_response.status_code)
         else:
-            if DEFAULT_PROFILE_IMAGE_FILE.exists():
-                DEFAULT_PROFILE_IMAGE_FILE.unlink()
+            if WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE.exists():
+                WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE.unlink()
             debug_log("capture_webhook_defaults_avatar_none")
         config["webhook_default_source"] = identity_key
         save_config()
@@ -563,8 +626,8 @@ def get_avatar_sync_key() -> str:
         return ""
     if CUSTOM_PROFILE_IMAGE_FILE.exists():
         source = f"custom:{CUSTOM_PROFILE_IMAGE_FILE.stat().st_mtime_ns}"
-    elif webhook_defaults_match_current() and DEFAULT_PROFILE_IMAGE_FILE.exists():
-        source = f"default:{DEFAULT_PROFILE_IMAGE_FILE.stat().st_mtime_ns}"
+    elif webhook_defaults_match_current() and WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE.exists():
+        source = f"default:{WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE.stat().st_mtime_ns}"
     else:
         source = "default:none"
     return f"{webhook_key}|{source}"
@@ -583,8 +646,8 @@ def sync_webhook_avatar(force: bool = False):
     if CUSTOM_PROFILE_IMAGE_FILE.exists():
         avatar_payload = image_file_to_data_uri(CUSTOM_PROFILE_IMAGE_FILE)
         source = "custom"
-    elif webhook_defaults_match_current() and DEFAULT_PROFILE_IMAGE_FILE.exists():
-        avatar_payload = image_file_to_data_uri(DEFAULT_PROFILE_IMAGE_FILE)
+    elif webhook_defaults_match_current() and WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE.exists():
+        avatar_payload = image_file_to_data_uri(WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE)
         source = "default"
     else:
         avatar_payload = None
@@ -1070,7 +1133,7 @@ class AvatarPreview(QWidget):
             y = rect.y() + (rect.height() - scaled.height()) // 2
             painter.drawPixmap(x, y, scaled)
         else:
-            painter.fillPath(path, QColor("#7ca83c"))
+            painter.fillPath(path, QColor(BLUE))
 
         painter.setClipping(False)
         border_color = QColor(BLUE if self._hovered else "#2f343d")
@@ -1705,7 +1768,7 @@ class PostTemplatePage(PageBase):
         self.name_input.editingFinished.connect(self.on_name_editing_finished)
         preview_row.addWidget(self.name_input, 1)
 
-        self.remove_avatar_btn = HoverButton("✕", size=24, tooltip="Remove custom image", bg="#24272d", hover="#2b3038", fg=TEXT, font_size=8)
+        self.remove_avatar_btn = HoverButton("✕", size=24, tooltip="Remove custom image and custom name", bg="#24272d", hover="#2b3038", fg=TEXT, font_size=8)
         self.remove_avatar_btn.clicked.connect(self.remove_profile_image)
         preview_row.addWidget(self.remove_avatar_btn, 0, Qt.AlignVCenter)
 
@@ -1778,7 +1841,13 @@ class PostTemplatePage(PageBase):
         self.timer_input.setVisible(visible)
 
     def update_profile_preview(self):
-        image_path = str(CUSTOM_PROFILE_IMAGE_FILE) if CUSTOM_PROFILE_IMAGE_FILE.exists() else None
+        ensure_default_profile_image()
+        if CUSTOM_PROFILE_IMAGE_FILE.exists():
+            image_path = str(CUSTOM_PROFILE_IMAGE_FILE)
+        elif DEFAULT_PLACEHOLDER_IMAGE_FILE.exists():
+            image_path = str(DEFAULT_PLACEHOLDER_IMAGE_FILE)
+        else:
+            image_path = None
         self.avatar_preview.set_image_path(image_path)
         self.remove_avatar_btn.setVisible(CUSTOM_PROFILE_IMAGE_FILE.exists())
         default_name = (config.get("webhook_default_name", "") or "").strip() or "discord-webhook-uploader"
@@ -2714,6 +2783,7 @@ if __name__ == "__main__":
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
+    ensure_default_profile_image()
 
     controller = TrayController(app)
     debug_log("application_qt_created")
