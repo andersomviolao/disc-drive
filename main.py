@@ -37,11 +37,12 @@ try:
 except Exception:
     winreg = None
 
-APP_NAME = "Webhook-Uploader"
-APP_VERSION = "3.0.0"
-BASE_DIR = Path(os.getenv("LOCALAPPDATA", str(Path.home()))) / APP_NAME
-CONFIG_FILE = BASE_DIR / "cfg.json"
-LOG_FILE = BASE_DIR / "log.json"
+APP_NAME = "Discord Webhook Uploader"
+APP_DIR_NAME = "discord-webhook-uploader"
+APP_VERSION = "3.0.1"
+BASE_DIR = Path(os.getenv("LOCALAPPDATA", str(Path.home()))) / APP_DIR_NAME
+CONFIG_FILE = BASE_DIR / "config.json"
+LOG_FILE = BASE_DIR / "sent_log.json"
 DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 BG = "#0f1012"
@@ -287,7 +288,7 @@ def get_startup_command() -> str:
 
 def set_start_with_windows(enabled: bool):
     if winreg is None:
-        raise RuntimeError("Registro do Windows indisponível.")
+        raise RuntimeError("Windows registry is unavailable.")
     with winreg.OpenKey(winreg.HKEY_CURRENT_USER, STARTUP_REG_PATH, 0, winreg.KEY_SET_VALUE) as key:
         if enabled:
             winreg.SetValueEx(key, APP_NAME, 0, winreg.REG_SZ, get_startup_command())
@@ -359,7 +360,7 @@ def build_test_message(template_text: str | None = None) -> str:
 def send_test_message(template_text: str | None = None, use_embed: bool | None = None):
     webhook = (config.get("webhook") or "").strip()
     if not webhook:
-        return False, "Preencha um webhook antes de testar."
+        return False, "Enter a webhook before testing."
 
     message = build_test_message(template_text)
     use_embed = bool(config.get("use_embed", False)) if use_embed is None else bool(use_embed)
@@ -369,14 +370,14 @@ def send_test_message(template_text: str | None = None, use_embed: bool | None =
     try:
         res = requests.post(webhook, data=payload, timeout=12)
         if res.status_code in (200, 204):
-            return True, "Teste enviado com sucesso."
+            return True, "Test sent successfully."
         if res.status_code == 404:
-            return False, "Webhook não encontrado."
+            return False, "Webhook not found."
         if res.status_code == 401:
-            return False, "Webhook sem autorização."
-        return False, f"Falha no teste ({res.status_code})."
+            return False, "Webhook unauthorized."
+        return False, f"Test failed ({res.status_code})."
     except Exception:
-        return False, "Não foi possível testar o webhook."
+        return False, "Could not test the webhook."
 
 
 def finalize_sent_file(path, filename, file_hash, upload_str):
@@ -394,7 +395,7 @@ def send_file(path):
 
     filename = os.path.basename(path)
     watched_folder = config.get("folder", "")
-    error_dir = Path(watched_folder) / "ERROR" if watched_folder else None
+    error_dir = Path(watched_folder) / "fail" if watched_folder else None
 
     try:
         if os.path.getsize(path) / (1024 * 1024) > 25:
@@ -462,16 +463,16 @@ def send_file(path):
 
 def send_now_manual():
     if not config.get("folder"):
-        signals.toast.emit("error", "Selecione uma pasta primeiro.")
+        signals.toast.emit("error", "Select a folder first.")
         return
 
     folder = config.get("folder", "")
     if not os.path.isdir(folder):
-        signals.toast.emit("error", "A pasta monitorada não existe.")
+        signals.toast.emit("error", "The watched folder does not exist.")
         return
 
     if not send_lock.acquire(blocking=False):
-        signals.toast.emit("warning", "Já existe um envio em andamento.")
+        signals.toast.emit("warning", "A send operation is already in progress.")
         return
 
     try:
@@ -486,16 +487,16 @@ def send_now_manual():
                 break
             if send_file(file):
                 sent_any = True
-                signals.toast.emit("success", f"Enviado: {os.path.basename(file)}")
+                signals.toast.emit("success", f"Sent: {os.path.basename(file)}")
                 for _ in range(get_post_interval_seconds()):
                     if stop_event.is_set():
                         break
                     time.sleep(1)
         if not sent_any:
-            signals.toast.emit("info", "Nenhum arquivo disponível para enviar agora.")
+            signals.toast.emit("info", "No file is available to send right now.")
     except Exception:
         traceback.print_exc()
-        signals.toast.emit("error", "Falha ao enviar agora.")
+        signals.toast.emit("error", "Send now failed.")
     finally:
         send_lock.release()
         signals.refresh_fields.emit()
@@ -519,7 +520,7 @@ def monitoring_loop():
                         if stop_event.is_set() or not monitoring:
                             break
                         if send_file(file):
-                            signals.toast.emit("success", f"Enviado automaticamente: {os.path.basename(file)}")
+                            signals.toast.emit("success", f"Sent automatically: {os.path.basename(file)}")
                             for _ in range(get_post_interval_seconds()):
                                 if stop_event.is_set() or not monitoring:
                                     break
@@ -604,7 +605,7 @@ class ColorSwatchButton(QPushButton):
         self._hovered = False
         self._color = normalize_hex_color(hex_color)
         self.setCursor(Qt.PointingHandCursor)
-        self.setToolTip("Cor do embed")
+        self.setToolTip("Embed color")
         self.setFixedSize(30, 30)
         self.apply_style()
 
@@ -1070,7 +1071,7 @@ class HomeValueRow(QFrame):
 
 class HomePage(PageBase):
     def __init__(self, window):
-        super().__init__(f"Webhook Uploader v{APP_VERSION}", "Monitoramento simples, visual refinado e tudo dentro da mesma interface.")
+        super().__init__(f"{APP_NAME} v{APP_VERSION}", "Simple monitoring, polished visuals, and everything inside the same interface.")
         self.window = window
 
         header = QHBoxLayout()
@@ -1082,17 +1083,17 @@ class HomePage(PageBase):
         left.addWidget(self.subtitle)
         header.addLayout(left, 1)
 
-        self.cfg_btn = HoverButton("⚙", size=18, tooltip="Configurações", bg="transparent", hover="#1d2025", fg="#6f7580", font_size=8)
+        self.cfg_btn = HoverButton("⚙", size=18, tooltip="Settings", bg="transparent", hover="#1d2025", fg="#6f7580", font_size=8)
         self.cfg_btn.clicked.connect(self.window.open_settings_page)
         header.addWidget(self.cfg_btn, 0, Qt.AlignTop | Qt.AlignRight)
 
         self.layout().insertLayout(0, header)
         self.layout().removeItem(self.layout().itemAt(1))
 
-        self.webhook_row = HomeValueRow(self.window, "Webhook", "Editar", self.window.open_webhook_page)
+        self.webhook_row = HomeValueRow(self.window, "Webhook", "Edit", self.window.open_webhook_page)
         self.body.addWidget(self.webhook_row)
 
-        self.folder_row = HomeValueRow(self.window, "Watched Folder", "Editar", self.window.open_folder_page)
+        self.folder_row = HomeValueRow(self.window, "Watched Folder", "Edit", self.window.open_folder_page)
         self.body.addWidget(self.folder_row)
 
         self.body.addStretch(1)
@@ -1102,39 +1103,39 @@ class HomePage(PageBase):
         bottom.addStretch(1)
         bottom.setSpacing(8)
 
-        self.pause_btn = self.window.make_small_button("Rodando", self.window.toggle_monitoring, accent=BLUE)
+        self.pause_btn = self.window.make_small_button("Running", self.window.toggle_monitoring, accent=BLUE)
         self.pause_btn.setFixedSize(102, 30)
         bottom.addWidget(self.pause_btn)
 
-        self.send_now_btn = self.window.make_small_button("Enviar agora", self.window.start_send_now, accent=BLUE)
+        self.send_now_btn = self.window.make_small_button("Send Now", self.window.start_send_now, accent=BLUE)
         self.send_now_btn.setFixedSize(102, 30)
         bottom.addWidget(self.send_now_btn)
 
-        self.close_btn = self.window.make_secondary_button("Esconder", self.window.hide_to_tray)
+        self.close_btn = self.window.make_secondary_button("Hide", self.window.hide_to_tray)
         self.close_btn.setFixedSize(102, 30)
         bottom.addWidget(self.close_btn)
 
         self.body.addLayout(bottom)
 
     def refresh(self):
-        self.webhook_row.set_value(config.get("webhook", ""), "Nenhum webhook configurado")
-        self.folder_row.set_value(config.get("folder", ""), "Nenhuma pasta selecionada")
+        self.webhook_row.set_value(config.get("webhook", ""), "No webhook configured")
+        self.folder_row.set_value(config.get("folder", ""), "No folder selected")
         self.update_pause_visual()
 
     def update_pause_visual(self):
         if monitoring:
-            self.pause_btn.setText("Rodando")
+            self.pause_btn.setText("Running")
             self.pause_btn.setStyleSheet(self.window.small_button_style(enabled=True, accent=BLUE))
-            self.pause_btn.setToolTip("Pausar")
+            self.pause_btn.setToolTip("Pause")
         else:
-            self.pause_btn.setText("Pausado")
+            self.pause_btn.setText("Paused")
             self.pause_btn.setStyleSheet(self.window.small_button_style(enabled=True, accent=YELLOW, hover="#ffca52", text_color="#1e1a10"))
-            self.pause_btn.setToolTip("Retomar")
+            self.pause_btn.setToolTip("Resume")
 
 
 class WebhookPage(PageBase):
     def __init__(self, window):
-        super().__init__("Editar webhook", "Digite ou cole a URL completa do webhook do Discord.")
+        super().__init__("Edit Webhook", "Type or paste the full Discord webhook URL.")
         self.window = window
         self.body.addSpacing(8)
         self.input = QLineEdit()
@@ -1144,8 +1145,8 @@ class WebhookPage(PageBase):
         self.body.addWidget(self.input)
 
         buttons = QHBoxLayout()
-        self.back_btn = self.window.make_secondary_button("← Voltar", self.window.go_home)
-        self.save_btn = self.window.make_primary_button("Salvar", self.save)
+        self.back_btn = self.window.make_secondary_button("← Back", self.window.go_home)
+        self.save_btn = self.window.make_primary_button("Save", self.save)
         buttons.addWidget(self.back_btn)
         buttons.addStretch(1)
         buttons.addWidget(self.save_btn)
@@ -1160,17 +1161,17 @@ class WebhookPage(PageBase):
     def save(self):
         text = self.input.text().strip()
         if not is_valid_webhook(text):
-            self.window.show_message("error", "Cole uma URL válida de webhook.")
+            self.window.show_message("error", "Paste a valid webhook URL.")
             return
         config["webhook"] = text
         save_config()
-        self.window.show_message("success", "Webhook atualizado.")
+        self.window.show_message("success", "Webhook updated.")
         self.window.go_home()
 
 
 class FolderPage(PageBase):
     def __init__(self, window):
-        super().__init__("Editar pasta monitorada", "Escolha a pasta pelo navegador do Windows para evitar digitar o caminho manualmente.")
+        super().__init__("Edit Watched Folder", "Choose the folder through the Windows browser instead of typing the path manually.")
         self.window = window
         self.body.addSpacing(8)
 
@@ -1178,21 +1179,21 @@ class FolderPage(PageBase):
         row.setSpacing(10)
 
         self.input = QLineEdit()
-        self.input.setPlaceholderText(r"Nenhuma pasta selecionada")
+        self.input.setPlaceholderText(r"No folder selected")
         self.input.setMinimumHeight(38)
         self.input.setReadOnly(True)
         self.input.setStyleSheet(self.window.input_style())
         row.addWidget(self.input, 1)
 
-        self.browse_btn = self.window.make_secondary_button("Procurar", self.browse_folder)
+        self.browse_btn = self.window.make_secondary_button("Browse", self.browse_folder)
         self.browse_btn.setMinimumHeight(38)
         row.addWidget(self.browse_btn)
 
         self.body.addLayout(row)
 
         buttons = QHBoxLayout()
-        self.back_btn = self.window.make_secondary_button("← Voltar", self.window.go_home)
-        self.save_btn = self.window.make_primary_button("Salvar", self.save)
+        self.back_btn = self.window.make_secondary_button("← Back", self.window.go_home)
+        self.save_btn = self.window.make_primary_button("Save", self.save)
         buttons.addWidget(self.back_btn)
         buttons.addStretch(1)
         buttons.addWidget(self.save_btn)
@@ -1206,7 +1207,7 @@ class FolderPage(PageBase):
         current = config.get("folder", "") or str(Path.home())
         selected = QFileDialog.getExistingDirectory(
             self.window,
-            "Selecionar pasta monitorada",
+            "Select Watched Folder",
             current,
             QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks,
         )
@@ -1216,33 +1217,33 @@ class FolderPage(PageBase):
     def save(self):
         text = self.input.text().strip().strip('"')
         if not text:
-            self.window.show_message("error", "Selecione uma pasta válida.")
+            self.window.show_message("error", "Select a valid folder.")
             return
         path = Path(text)
         if not path.exists() or not path.is_dir():
-            self.window.show_message("error", "A pasta selecionada não existe.")
+            self.window.show_message("error", "The selected folder does not exist.")
             return
         config["folder"] = str(path)
         save_config()
-        self.window.show_message("success", "Pasta monitorada atualizada.")
+        self.window.show_message("success", "Watched folder updated.")
         self.window.go_home()
 
 
 
 class PostTemplatePage(PageBase):
     def __init__(self, window):
-        super().__init__("Personalizar post", "Edite o conteúdo bruto que será enviado junto com o arquivo no Discord.")
+        super().__init__("Customize Post", "Edit the raw content that will be sent together with the file on Discord.")
         self.window = window
         self._loading = False
         self.body.addSpacing(6)
 
         self.editor = QTextEdit()
-        self.editor.setPlaceholderText("Digite aqui o conteúdo do post...")
+        self.editor.setPlaceholderText("Type the post content here...")
         self.editor.setStyleSheet(self.window.text_edit_style())
         self.editor.textChanged.connect(self.on_editor_text_changed)
         self.body.addWidget(self.editor, 1)
 
-        self.help_label = QLabel("Variáveis: {filename}  •  {creation_str}  •  {upload_str}")
+        self.help_label = QLabel("Variables: {filename}  •  {creation_str}  •  {upload_str}")
         self.help_label.setWordWrap(True)
         self.help_label.setStyleSheet(f"color:{MUTED}; font: 500 9px 'Segoe UI';")
         self.body.addWidget(self.help_label)
@@ -1252,10 +1253,10 @@ class PostTemplatePage(PageBase):
         buttons.setContentsMargins(0, 0, 0, 0)
         buttons.setSpacing(8)
 
-        self.back_btn = self.window.make_secondary_button("← Voltar", self.back_to_settings)
+        self.back_btn = self.window.make_secondary_button("← Back", self.back_to_settings)
         buttons.addWidget(self.back_btn)
 
-        self.test_btn = self.window.make_small_button("Testar webhook", self.test_webhook)
+        self.test_btn = self.window.make_small_button("Test Webhook", self.test_webhook)
         buttons.addWidget(self.test_btn)
         buttons.addStretch(1)
 
@@ -1332,7 +1333,7 @@ class PostTemplatePage(PageBase):
         text = self.editor.toPlainText().replace("\r\n", "\n")
         save_template(text)
         if show_feedback:
-            self.window.show_message("success", "Post salvo no cfg.json.")
+            self.window.show_message("success", "Post saved to config.json.")
 
     def back_to_settings(self):
         self.save_template(show_feedback=True)
@@ -1378,11 +1379,11 @@ class SettingRow(QFrame):
 
 class SettingsPage(PageBase):
     def __init__(self, window):
-        super().__init__("Configurações", "Tudo é salvo imediatamente ao modificar cada opção.")
+        super().__init__("Settings", "Everything is saved immediately whenever you change an option.")
         self.window = window
 
         back_row = QHBoxLayout()
-        self.back_btn = self.window.make_secondary_button("← Voltar", self.window.go_home)
+        self.back_btn = self.window.make_secondary_button("← Back", self.window.go_home)
         back_row.addWidget(self.back_btn)
         back_row.addStretch(1)
         self.body.addLayout(back_row)
@@ -1403,38 +1404,38 @@ class SettingsPage(PageBase):
 
         self.start_toggle = ToggleSwitch(config.get("start_with_windows", False))
         self.start_toggle.clicked.connect(self.toggle_startup)
-        self.scroll_body.addWidget(SettingRow("Iniciar com Windows", "Abre oculto na bandeja quando o Windows iniciar.", self.start_toggle))
+        self.scroll_body.addWidget(SettingRow("Start with Windows", "Starts hidden in the system tray when Windows launches.", self.start_toggle))
 
         self.delete_toggle = ToggleSwitch(config.get("delete_after_send", True))
         self.delete_toggle.clicked.connect(self.toggle_delete_after_send)
-        self.scroll_body.addWidget(SettingRow("Excluir após enviar", "Ligado: move para a lixeira. Desligado: mantém o arquivo e evita duplicidade pelo log.", self.delete_toggle))
+        self.scroll_body.addWidget(SettingRow("Delete after send", "On: moves the file to the Recycle Bin. Off: keeps the file and avoids duplicates through the log.", self.delete_toggle))
 
         post_wrap = QWidget()
         post_wrap.setStyleSheet("background: transparent;")
         post_layout = QHBoxLayout(post_wrap)
         post_layout.setContentsMargins(0, 0, 0, 0)
-        self.post_btn = self.window.make_small_button("Editar post", self.window.open_post_template_page)
+        self.post_btn = self.window.make_small_button("Edit Post", self.window.open_post_template_page)
         post_layout.addWidget(self.post_btn)
-        self.scroll_body.addWidget(SettingRow("Personalizar post", "Abre uma página para editar o texto do post, escolher a cor do embed e salvar tudo no cfg.json.", post_wrap))
+        self.scroll_body.addWidget(SettingRow("Customize Post", "Opens a page to edit the post text, choose the embed color, and save everything to config.json.", post_wrap))
 
         clear_wrap = QWidget()
         clear_wrap.setStyleSheet("background: transparent;")
         clear_layout = QHBoxLayout(clear_wrap)
         clear_layout.setContentsMargins(0, 0, 0, 0)
-        self.clear_log_btn = self.window.make_small_button("Limpar log", self.clear_log, accent=YELLOW)
+        self.clear_log_btn = self.window.make_small_button("Clear Log", self.clear_log, accent=YELLOW)
         clear_layout.addWidget(self.clear_log_btn)
-        self.scroll_body.addWidget(SettingRow("Limpar log", "Apaga o histórico de arquivos já enviados e permite novo envio desses arquivos.", clear_wrap))
+        self.scroll_body.addWidget(SettingRow("Clear Log", "Deletes the history of already sent files and allows them to be sent again.", clear_wrap))
 
         open_wrap = QWidget()
         open_wrap.setStyleSheet("background: transparent;")
         open_layout = QHBoxLayout(open_wrap)
         open_layout.setContentsMargins(0, 0, 0, 0)
-        self.open_cfg_btn = self.window.make_small_button("Abrir pasta", self.open_config_folder)
+        self.open_cfg_btn = self.window.make_small_button("Open Folder", self.open_config_folder)
         open_layout.addWidget(self.open_cfg_btn)
-        self.scroll_body.addWidget(SettingRow("Pasta de configurações", str(BASE_DIR), open_wrap))
+        self.scroll_body.addWidget(SettingRow("Configuration Folder", str(BASE_DIR), open_wrap))
 
         self.version_value = self.window.make_info_value()
-        self.scroll_body.addWidget(SettingRow("Versão do app", "Versão atual em uso.", self.version_value))
+        self.scroll_body.addWidget(SettingRow("App Version", "Current version in use.", self.version_value))
         self.scroll_body.addStretch(1)
 
     def refresh(self):
@@ -1448,27 +1449,27 @@ class SettingsPage(PageBase):
             set_start_with_windows(enabled)
             config["start_with_windows"] = enabled
             save_config()
-            self.window.show_message("success", "Inicialização com Windows atualizada.")
+            self.window.show_message("success", "Start with Windows updated.")
         except Exception:
             self.start_toggle.setChecked(not enabled)
-            self.window.show_message("error", "Não foi possível alterar a inicialização com Windows.")
+            self.window.show_message("error", "Could not change the Start with Windows setting.")
 
     def toggle_delete_after_send(self):
         config["delete_after_send"] = self.delete_toggle.isChecked()
         save_config()
-        self.window.show_message("success", "Opção de exclusão atualizada.")
+        self.window.show_message("success", "Delete option updated.")
 
     def clear_log(self):
         clear_sent_log()
-        self.window.show_message("success", "Log de envio limpo.")
+        self.window.show_message("success", "Send log cleared.")
 
     def open_config_folder(self):
         BASE_DIR.mkdir(parents=True, exist_ok=True)
         try:
             os.startfile(str(BASE_DIR))
-            self.window.show_message("info", "Pasta raiz do Webhook-Uploader aberta.")
+            self.window.show_message("info", "Discord Webhook Uploader folder opened.")
         except Exception:
-            self.window.show_message("error", "Não foi possível abrir a pasta raiz do Webhook-Uploader.")
+            self.window.show_message("error", "Could not open the Discord Webhook Uploader folder.")
 
 
 
@@ -1816,7 +1817,7 @@ class TrayExitBubble(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        self.exit_btn = QPushButton("Encerrar")
+        self.exit_btn = QPushButton("Quit")
         self.exit_btn.setCursor(Qt.PointingHandCursor)
         self.exit_btn.clicked.connect(self.handle_exit)
         self.exit_btn.setFixedSize(92, 30)
@@ -1873,6 +1874,12 @@ class TrayController(QObject):
         self.tray.activated.connect(self.on_tray_activated)
         signals.status_changed.connect(self.sync_pause_action)
 
+        self.focus_loss_timer = QTimer(self)
+        self.focus_loss_timer.setSingleShot(True)
+        self.focus_loss_timer.setInterval(120)
+        self.focus_loss_timer.timeout.connect(self.handle_focus_loss)
+        self.app.focusChanged.connect(self.on_focus_changed)
+
         self.tray_timer = QTimer(self)
         self.tray_timer.setInterval(80)
         self.tray_timer.timeout.connect(self.refresh_tray_icon)
@@ -1912,6 +1919,45 @@ class TrayController(QObject):
     def sync_pause_action(self, active):
         self.window.home_page.update_pause_visual()
         self.refresh_tray_icon(force=True)
+
+    def on_focus_changed(self, old, now):
+        if now is None:
+            self.focus_loss_timer.start()
+        else:
+            self.focus_loss_timer.stop()
+
+    def iter_managed_windows(self):
+        managed = [self.window, self.exit_bubble]
+        seen = {id(self.window), id(self.exit_bubble)}
+        for widget in QApplication.topLevelWidgets():
+            if id(widget) in seen:
+                continue
+            parent = widget.parentWidget()
+            if parent is self.window or self.window.isAncestorOf(widget):
+                managed.append(widget)
+                seen.add(id(widget))
+        return managed
+
+    def hide_interface_to_tray(self):
+        for widget in self.iter_managed_windows():
+            if widget is not self.window:
+                widget.hide()
+        self.window.hide_to_tray()
+
+    def handle_focus_loss(self):
+        visible_windows = [widget for widget in self.iter_managed_windows() if widget.isVisible()]
+        if not visible_windows:
+            return
+        if QApplication.activeModalWidget() is not None or QApplication.activePopupWidget() is not None:
+            return
+        active_window = QApplication.activeWindow()
+        if active_window in visible_windows:
+            return
+        for widget in visible_windows:
+            focus_widget = widget.focusWidget()
+            if focus_widget is not None and focus_widget.hasFocus():
+                return
+        self.hide_interface_to_tray()
 
     def on_tray_activated(self, reason):
         if reason == QSystemTrayIcon.Context:
