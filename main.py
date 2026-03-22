@@ -46,9 +46,9 @@ except Exception:
 
 APP_NAME = "Discord Webhook Uploader"
 APP_DIR_NAME = "discord-webhook-uploader"
-APP_VERSION = "3.0.7"
+APP_VERSION = "3.0.8"
 WINDOW_WIDTH = 560
-WINDOW_HEIGHT = 320
+WINDOW_HEIGHT = 380
 BASE_DIR = Path(os.getenv("LOCALAPPDATA", str(Path.home()))) / APP_DIR_NAME
 CONFIG_FILE = BASE_DIR / "config.json"
 LOG_FILE = BASE_DIR / "sent_log.json"
@@ -1875,16 +1875,19 @@ class PostTemplatePage(PageBase):
         self.window.show_message("success", "Webhook image updated.")
 
     def remove_profile_image(self):
-        if not CUSTOM_PROFILE_IMAGE_FILE.exists():
+        had_custom_image = CUSTOM_PROFILE_IMAGE_FILE.exists()
+        had_custom_name = bool((self.name_input.text() or "").strip()) or bool(get_custom_webhook_name())
+        if not had_custom_image and not had_custom_name:
             return
-        if not remove_custom_profile_image():
+        if had_custom_image and not remove_custom_profile_image():
             self.window.show_message("error", "Could not remove the webhook image.")
             return
+        self.name_input.clear()
         self.save_template(show_feedback=False)
         self.update_profile_preview()
         if (config.get("webhook") or "").strip():
             sync_webhook_avatar(force=True)
-        self.window.show_message("success", "Webhook image removed.")
+        self.window.show_message("success", "Webhook image and custom name removed.")
 
     def test_webhook(self):
         ok, msg = send_test_message(self.editor.toPlainText(), self.embed_toggle.isChecked(), webhook_name=self.name_input.text())
