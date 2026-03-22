@@ -13,7 +13,7 @@ import traceback
 from pathlib import Path
 
 from send2trash import send2trash
-from PySide6.QtCore import Qt, Signal, QObject, QEasingCurve, QPropertyAnimation, QTimer, QRect
+from PySide6.QtCore import Qt, Signal, QObject, QEasingCurve, QPropertyAnimation, QTimer, QRect, QSize
 from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap, QBrush, QLinearGradient
 from PySide6.QtWidgets import (
     QApplication,
@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QScrollArea,
     QTextEdit,
+    QSizePolicy,
     )
 
 try:
@@ -39,10 +40,13 @@ except Exception:
 
 APP_NAME = "Discord Webhook Uploader"
 APP_DIR_NAME = "discord-webhook-uploader"
-APP_VERSION = "3.0.1"
+APP_VERSION = "3.0.3"
+WINDOW_WIDTH = 560
+WINDOW_HEIGHT = 320
 BASE_DIR = Path(os.getenv("LOCALAPPDATA", str(Path.home()))) / APP_DIR_NAME
 CONFIG_FILE = BASE_DIR / "config.json"
 LOG_FILE = BASE_DIR / "sent_log.json"
+DEBUG_FILE = BASE_DIR / "debug.json"
 DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 BG = "#0f1012"
@@ -67,10 +71,77 @@ MONITOR_CHECK_INTERVAL = 5
 STARTUP_REG_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
 file_lock = threading.RLock()
+debug_lock = threading.RLock()
 send_lock = threading.Lock()
 sending_event = threading.Event()
 monitoring = True
 stop_event = threading.Event()
+
+
+DEBUG_SESSION_STARTED_AT = datetime.datetime.now().isoformat(timespec="seconds")
+debug_events = []
+
+
+def _safe_debug_value(value):
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, dict):
+        return {str(k): _safe_debug_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_safe_debug_value(v) for v in value]
+    return str(value)
+
+
+def debug_enabled() -> bool:
+    return bool(globals().get("config", {}).get("debug_mode", False))
+
+
+def debug_snapshot():
+    return {
+        "app_name": APP_NAME,
+        "app_version": APP_VERSION,
+        "session_started_at": DEBUG_SESSION_STARTED_AT,
+        "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        "debug_mode": debug_enabled(),
+        "events": debug_events,
+    }
+
+
+def write_debug_file():
+    with debug_lock:
+        DEBUG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(DEBUG_FILE, "w", encoding="utf-8") as f:
+            json.dump(debug_snapshot(), f, indent=4, ensure_ascii=False)
+
+
+def debug_log(action: str, **details):
+    if not debug_enabled():
+        return
+    entry = {
+        "index": len(debug_events) + 1,
+        "time": datetime.datetime.now().isoformat(timespec="milliseconds"),
+        "action": action,
+    }
+    if details:
+        entry["details"] = _safe_debug_value(details)
+    line = f"[DEBUG] {entry['time']} | {action}"
+    if details:
+        detail_text = ", ".join(f"{key}={_safe_debug_value(value)}" for key, value in details.items())
+        line += f" | {detail_text}"
+    print(line, flush=True)
+    with debug_lock:
+        debug_events.append(entry)
+    write_debug_file()
+
+
+def init_debug_session():
+    if debug_enabled():
+        with debug_lock:
+            debug_events.clear()
+        write_debug_file()
+        debug_log("debug_session_started", base_dir=str(BASE_DIR), config_file=str(CONFIG_FILE))
 
 
 def load_json(path: Path, default):
@@ -119,6 +190,7 @@ def load_template():
 
 def save_template(text: str):
     config["post_template"] = normalize_multiline_text(text, default_template_text())
+    debug_log("save_template")
     save_config()
 
 
@@ -173,6 +245,7 @@ def normalize_config(raw):
         "post_template": normalize_multiline_text(raw.get("post_template", default_template_text()), default_template_text()),
         "wait_time_seconds": normalize_int(raw.get("wait_time_seconds", DEFAULT_WAIT_TIME), DEFAULT_WAIT_TIME, minimum=0),
         "post_interval_seconds": normalize_int(raw.get("post_interval_seconds", DEFAULT_POST_INTERVAL), DEFAULT_POST_INTERVAL, minimum=0),
+        "debug_mode": bool(raw.get("debug_mode", False)),
     }
 
 
@@ -189,6 +262,17 @@ class UISignals(QObject):
 
 
 signals = UISignals()
+
+
+class CompactStackedWidget(QStackedWidget):
+    def sizeHint(self):
+        current = self.currentWidget()
+        if current is not None:
+            return current.sizeHint()
+        return QSize(0, 0)
+
+    def minimumSizeHint(self):
+        return QSize(0, 0)
 
 
 TRAY_ICON_SIZE = 64
@@ -270,6 +354,7 @@ def save_config():
     config = normalize_config(config)
     BASE_DIR.mkdir(parents=True, exist_ok=True)
     save_json(CONFIG_FILE, config)
+    debug_log("config_saved", keys=sorted(config.keys()), debug_mode=config.get("debug_mode", False))
     signals.refresh_fields.emit()
 
 
@@ -287,16 +372,20 @@ def get_startup_command() -> str:
 
 
 def set_start_with_windows(enabled: bool):
+    debug_log("set_start_with_windows_requested", enabled=enabled)
     if winreg is None:
         raise RuntimeError("Windows registry is unavailable.")
     with winreg.OpenKey(winreg.HKEY_CURRENT_USER, STARTUP_REG_PATH, 0, winreg.KEY_SET_VALUE) as key:
         if enabled:
             winreg.SetValueEx(key, APP_NAME, 0, winreg.REG_SZ, get_startup_command())
+            debug_log("set_start_with_windows_applied", enabled=True)
         else:
             try:
                 winreg.DeleteValue(key, APP_NAME)
             except FileNotFoundError:
+                debug_log("set_start_with_windows_missing_registry_value")
                 pass
+            debug_log("set_start_with_windows_applied", enabled=False)
 
 
 def get_file_hash(path):
@@ -358,8 +447,10 @@ def build_test_message(template_text: str | None = None) -> str:
 
 
 def send_test_message(template_text: str | None = None, use_embed: bool | None = None):
+    debug_log("send_test_message_started")
     webhook = (config.get("webhook") or "").strip()
     if not webhook:
+        debug_log("send_test_message_blocked", reason="missing_webhook")
         return False, "Enter a webhook before testing."
 
     message = build_test_message(template_text)
@@ -370,27 +461,37 @@ def send_test_message(template_text: str | None = None, use_embed: bool | None =
     try:
         res = requests.post(webhook, data=payload, timeout=12)
         if res.status_code in (200, 204):
+            debug_log("send_test_message_finished", success=True, status_code=res.status_code)
             return True, "Test sent successfully."
         if res.status_code == 404:
+            debug_log("send_test_message_finished", success=False, status_code=404)
             return False, "Webhook not found."
         if res.status_code == 401:
+            debug_log("send_test_message_finished", success=False, status_code=401)
             return False, "Webhook unauthorized."
+        debug_log("send_test_message_finished", success=False, status_code=res.status_code)
         return False, f"Test failed ({res.status_code})."
-    except Exception:
+    except Exception as exc:
+        debug_log("send_test_message_exception", error=str(exc))
         return False, "Could not test the webhook."
 
 
 def finalize_sent_file(path, filename, file_hash, upload_str):
+    debug_log("finalize_sent_file_started", path=path, filename=filename)
     if config.get("delete_after_send", True):
         send2trash(os.path.abspath(path))
+        debug_log("sent_file_moved_to_trash", path=path)
     with file_lock:
         sent_history.append({"file": filename, "hash": file_hash, "date": upload_str})
     save_json(LOG_FILE, sent_history)
+    debug_log("finalize_sent_file_finished", filename=filename, upload_time=upload_str)
 
 
 def send_file(path):
+    debug_log("send_file_started", path=path)
     webhook = (config.get("webhook") or "").strip()
     if not webhook:
+        debug_log("send_file_blocked", path=path, reason="missing_webhook")
         return False
 
     filename = os.path.basename(path)
@@ -398,23 +499,30 @@ def send_file(path):
     error_dir = Path(watched_folder) / "fail" if watched_folder else None
 
     try:
-        if os.path.getsize(path) / (1024 * 1024) > 25:
+        size_mb = os.path.getsize(path) / (1024 * 1024)
+        debug_log("send_file_size_checked", path=path, size_mb=round(size_mb, 3))
+        if size_mb > 25:
             if error_dir is not None:
                 error_dir.mkdir(exist_ok=True)
                 shutil.move(path, error_dir / filename)
+                debug_log("send_file_moved_to_fail", path=path, fail_path=str(error_dir / filename), reason="file_too_large")
             return False
-    except Exception:
+    except Exception as exc:
+        debug_log("send_file_size_check_failed", path=path, error=str(exc))
         return False
 
     file_hash = get_file_hash(path)
     if not file_hash:
+        debug_log("send_file_blocked", path=path, reason="hash_failed")
         return False
 
     with file_lock:
         if any(item.get("hash") == file_hash for item in sent_history):
+            debug_log("send_file_blocked", path=path, reason="duplicate_hash")
             return False
 
     if not file_is_free(path):
+        debug_log("send_file_blocked", path=path, reason="file_locked")
         return False
 
     try:
@@ -431,6 +539,7 @@ def send_file(path):
 
         for attempt in range(4):
             try:
+                debug_log("send_file_attempt_started", path=path, filename=filename, attempt=attempt + 1)
                 with open(path, "rb") as f:
                     sending_event.set()
                     try:
@@ -444,34 +553,44 @@ def send_file(path):
                     finally:
                         sending_event.clear()
 
+                debug_log("send_file_attempt_finished", path=path, filename=filename, attempt=attempt + 1, status_code=res.status_code)
                 if res.status_code in [200, 204]:
                     finalize_sent_file(path, filename, file_hash, upload_str)
+                    debug_log("send_file_finished", path=path, filename=filename, success=True)
                     return True
 
                 if res.status_code == 429:
+                    debug_log("send_file_rate_limited", path=path, filename=filename, attempt=attempt + 1, wait_seconds=2 ** attempt)
                     time.sleep(2 ** attempt)
                     continue
                 break
-            except Exception:
+            except Exception as exc:
                 sending_event.clear()
+                debug_log("send_file_attempt_exception", path=path, filename=filename, attempt=attempt + 1, error=str(exc))
                 time.sleep(2 ** attempt)
 
+        debug_log("send_file_finished", path=path, filename=filename, success=False)
         return False
-    except Exception:
+    except Exception as exc:
+        debug_log("send_file_exception", path=path, error=str(exc))
         return False
 
 
 def send_now_manual():
+    debug_log("send_now_manual_started")
     if not config.get("folder"):
+        debug_log("send_now_manual_blocked", reason="missing_folder")
         signals.toast.emit("error", "Select a folder first.")
         return
 
     folder = config.get("folder", "")
     if not os.path.isdir(folder):
+        debug_log("send_now_manual_blocked", reason="folder_missing_on_disk", folder=folder)
         signals.toast.emit("error", "The watched folder does not exist.")
         return
 
     if not send_lock.acquire(blocking=False):
+        debug_log("send_now_manual_blocked", reason="send_lock_busy")
         signals.toast.emit("warning", "A send operation is already in progress.")
         return
 
@@ -481,6 +600,7 @@ def send_now_manual():
             for f in os.listdir(folder)
             if os.path.isfile(os.path.join(folder, f))
         ]
+        debug_log("send_now_manual_files_scanned", folder=folder, file_count=len(files))
         sent_any = False
         for file in sorted(files, key=os.path.getctime):
             if stop_event.is_set():
@@ -493,21 +613,29 @@ def send_now_manual():
                         break
                     time.sleep(1)
         if not sent_any:
+            debug_log("send_now_manual_finished", sent_any=False)
             signals.toast.emit("info", "No file is available to send right now.")
-    except Exception:
+        else:
+            debug_log("send_now_manual_finished", sent_any=True)
+    except Exception as exc:
         traceback.print_exc()
+        debug_log("send_now_manual_exception", error=str(exc))
         signals.toast.emit("error", "Send now failed.")
     finally:
         send_lock.release()
+        debug_log("send_now_manual_lock_released")
         signals.refresh_fields.emit()
 
 
 def monitoring_loop():
     global monitoring
+    debug_log("monitoring_loop_started")
     while not stop_event.is_set():
+        debug_log("monitoring_loop_tick", monitoring=monitoring, folder=config.get("folder", ""), webhook_configured=bool(config.get("webhook")))
         if monitoring and config.get("folder") and config.get("webhook"):
             folder = config.get("folder", "")
             if os.path.isdir(folder) and send_lock.acquire(blocking=False):
+                debug_log("monitoring_lock_acquired", folder=folder)
                 try:
                     now = time.time()
                     files = [
@@ -516,6 +644,7 @@ def monitoring_loop():
                         if os.path.isfile(os.path.join(folder, f))
                     ]
                     ready = [p for p in files if now - os.path.getctime(p) >= get_wait_time_seconds()]
+                    debug_log("monitoring_folder_scanned", folder=folder, file_count=len(files), ready_count=len(ready))
                     for file in sorted(ready, key=os.path.getctime):
                         if stop_event.is_set() or not monitoring:
                             break
@@ -525,14 +654,18 @@ def monitoring_loop():
                                 if stop_event.is_set() or not monitoring:
                                     break
                                 time.sleep(1)
-                except Exception:
+                except Exception as exc:
                     traceback.print_exc()
+                    debug_log("monitoring_loop_exception", error=str(exc))
                 finally:
                     send_lock.release()
-        for _ in range(MONITOR_CHECK_INTERVAL):
+                    debug_log("monitoring_lock_released", folder=folder)
+        for second in range(MONITOR_CHECK_INTERVAL):
+            debug_log("monitoring_sleep_tick", second=second + 1, interval=MONITOR_CHECK_INTERVAL)
             if stop_event.is_set():
                 break
             time.sleep(1)
+    debug_log("monitoring_loop_stopped")
 
 
 class HoverButton(QPushButton):
@@ -999,6 +1132,7 @@ class RoundedPanel(QWidget):
 class PageBase(QWidget):
     def __init__(self, title, subtitle):
         super().__init__()
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(10)
@@ -1019,6 +1153,9 @@ class PageBase(QWidget):
         self.body = QVBoxLayout()
         self.body.setSpacing(10)
         root.addLayout(self.body, 1)
+
+    def minimumSizeHint(self):
+        return QSize(0, 0)
 
 
 class HomeValueRow(QFrame):
@@ -1448,6 +1585,7 @@ class SettingsPage(PageBase):
         try:
             set_start_with_windows(enabled)
             config["start_with_windows"] = enabled
+            debug_log("toggle_start_with_windows", enabled=enabled)
             save_config()
             self.window.show_message("success", "Start with Windows updated.")
         except Exception:
@@ -1456,14 +1594,17 @@ class SettingsPage(PageBase):
 
     def toggle_delete_after_send(self):
         config["delete_after_send"] = self.delete_toggle.isChecked()
+        debug_log("toggle_delete_after_send", enabled=config["delete_after_send"])
         save_config()
         self.window.show_message("success", "Delete option updated.")
 
     def clear_log(self):
+        debug_log("clear_log_requested")
         clear_sent_log()
         self.window.show_message("success", "Send log cleared.")
 
     def open_config_folder(self):
+        debug_log("open_config_folder_requested")
         BASE_DIR.mkdir(parents=True, exist_ok=True)
         try:
             os.startfile(str(BASE_DIR))
@@ -1476,9 +1617,11 @@ class SettingsPage(PageBase):
 
 def clear_sent_log():
     global sent_history
+    debug_log("clear_sent_log_started")
     with file_lock:
         sent_history = []
     save_json(LOG_FILE, sent_history)
+    debug_log("clear_sent_log_finished")
 
 
 class MainWindow(QWidget):
@@ -1486,11 +1629,16 @@ class MainWindow(QWidget):
         super().__init__()
         self.tray_icon = tray_icon
         self.drag_pos = None
+        self.is_dragging = False
         self.anim = None
+        self._drag_origin = None
+        self._geometry_fix_pending = False
+        self._enforcing_geometry = False
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setFixedSize(560, 320)
+        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(12, 12, 12, 12)
@@ -1502,7 +1650,8 @@ class MainWindow(QWidget):
         root.setContentsMargins(16, 14, 16, 12)
         root.setSpacing(10)
 
-        self.stack = QStackedWidget()
+        self.stack = CompactStackedWidget()
+        self.stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
         root.addWidget(self.stack, 1)
 
         self.message_label = QLabel("")
@@ -1518,7 +1667,11 @@ class MainWindow(QWidget):
         self.post_template_page = PostTemplatePage(self)
 
         for page in [self.home_page, self.webhook_page, self.folder_page, self.settings_page, self.post_template_page]:
+            page.setMinimumSize(0, 0)
+            page.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
             self.stack.addWidget(page)
+
+        debug_log("main_window_initialized", width=WINDOW_WIDTH, height=WINDOW_HEIGHT)
 
         self.message_timer = QTimer(self)
         self.message_timer.setSingleShot(True)
@@ -1693,14 +1846,17 @@ class MainWindow(QWidget):
         return label
 
     def refresh_all(self):
+        debug_log("refresh_all_started")
         self.home_page.refresh()
         self.settings_page.refresh()
+        debug_log("refresh_all_finished")
 
     def save_post_template_if_needed(self, show_feedback=False):
         if self.stack.currentWidget() is self.post_template_page:
             self.post_template_page.save_template(show_feedback=show_feedback)
 
     def switch_page(self, page, animated=True):
+        debug_log("switch_page", target_page=type(page).__name__, animated=animated)
         current = self.stack.currentWidget()
         if current is self.post_template_page and page is not self.post_template_page:
             self.post_template_page.save_template()
@@ -1733,6 +1889,7 @@ class MainWindow(QWidget):
         self.switch_page(self.post_template_page)
 
     def show_message(self, kind, text):
+        debug_log("show_message", kind=kind, text=text)
         colors = {
             "success": GREEN,
             "error": RED,
@@ -1759,32 +1916,70 @@ class MainWindow(QWidget):
         self.home_page.update_pause_visual()
 
     def toggle_visible(self):
+        debug_log("toggle_visible", currently_visible=self.isVisible())
         if self.isVisible():
             self.save_post_template_if_needed()
             self.hide()
         else:
             self.show_near_tray()
 
+    def ensure_expected_geometry(self):
+        debug_log("ensure_expected_geometry_started", width=self.width(), height=self.height(), window_state=int(self.windowState()))
+        if self._enforcing_geometry:
+            return
+        self._enforcing_geometry = True
+        try:
+            if self.windowState() != Qt.WindowNoState:
+                self.setWindowState(Qt.WindowNoState)
+            if self.minimumWidth() != WINDOW_WIDTH or self.minimumHeight() != WINDOW_HEIGHT:
+                self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
+            if self.width() != WINDOW_WIDTH or self.height() != WINDOW_HEIGHT:
+                self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        finally:
+            self._enforcing_geometry = False
+            debug_log("ensure_expected_geometry_finished", width=self.width(), height=self.height())
+
+    def schedule_geometry_fix(self):
+        debug_log("schedule_geometry_fix_requested", pending=self._geometry_fix_pending)
+        if self._geometry_fix_pending:
+            return
+        self._geometry_fix_pending = True
+        QTimer.singleShot(0, self.apply_scheduled_geometry_fix)
+
+    def apply_scheduled_geometry_fix(self):
+        debug_log("apply_scheduled_geometry_fix")
+        self._geometry_fix_pending = False
+        self.ensure_expected_geometry()
+
     def hide_to_tray(self):
+        debug_log("hide_to_tray")
         self.save_post_template_if_needed()
+        self.is_dragging = False
+        self.drag_pos = None
         self.hide()
         self.clear_message()
 
     def hideEvent(self, event):
+        debug_log("main_window_hide_event")
         self.save_post_template_if_needed()
         super().hideEvent(event)
 
     def show_near_tray(self):
+        debug_log("show_near_tray_started")
         self.refresh_all()
+        self.ensure_expected_geometry()
         screen = QApplication.primaryScreen().availableGeometry()
-        x = screen.right() - self.width() - 20
-        y = screen.bottom() - self.height() - 50
+        x = screen.right() - WINDOW_WIDTH - 20
+        y = screen.bottom() - WINDOW_HEIGHT - 50
         self.move(x, y)
+        debug_log("show_near_tray_positioned", x=x, y=y)
         self.show()
         self.raise_()
         self.activateWindow()
+        self.schedule_geometry_fix()
 
     def exit_app(self):
+        debug_log("exit_app_requested")
         self.save_post_template_if_needed()
         stop_event.set()
         self.hide()
@@ -1793,17 +1988,51 @@ class MainWindow(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
+            self.ensure_expected_geometry()
             self.drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            self._drag_origin = self.pos()
+            self.is_dragging = True
+            debug_log("window_drag_started", mouse_x=event.globalPosition().toPoint().x(), mouse_y=event.globalPosition().toPoint().y(), window_x=self.x(), window_y=self.y())
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
         if self.drag_pos is not None and event.buttons() & Qt.LeftButton:
-            self.move(event.globalPosition().toPoint() - self.drag_pos)
+            target = event.globalPosition().toPoint() - self.drag_pos
+            self.setGeometry(target.x(), target.y(), WINDOW_WIDTH, WINDOW_HEIGHT)
+            debug_log("window_drag_moved", target_x=target.x(), target_y=target.y(), width=self.width(), height=self.height())
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        debug_log("window_drag_released", width=self.width(), height=self.height())
         self.drag_pos = None
+        self.is_dragging = False
+        self.schedule_geometry_fix()
         super().mouseReleaseEvent(event)
+
+    def resizeEvent(self, event):
+        debug_log("main_window_resize_event", width=event.size().width(), height=event.size().height(), expected_width=WINDOW_WIDTH, expected_height=WINDOW_HEIGHT)
+        super().resizeEvent(event)
+        if self._enforcing_geometry:
+            return
+        if event.size().width() != WINDOW_WIDTH or event.size().height() != WINDOW_HEIGHT:
+            self.schedule_geometry_fix()
+
+    def changeEvent(self, event):
+        debug_log("main_window_change_event", event_type=int(event.type()), window_state=int(self.windowState()))
+        super().changeEvent(event)
+        if event.type() == event.Type.WindowStateChange and self.windowState() != Qt.WindowNoState:
+            self.schedule_geometry_fix()
+
+    def showEvent(self, event):
+        debug_log("main_window_show_event")
+        self.ensure_expected_geometry()
+        super().showEvent(event)
+
+    def sizeHint(self):
+        return QSize(WINDOW_WIDTH, WINDOW_HEIGHT)
+
+    def minimumSizeHint(self):
+        return QSize(WINDOW_WIDTH, WINDOW_HEIGHT)
 
 
 class TrayExitBubble(QWidget):
@@ -1865,6 +2094,7 @@ class TrayController(QObject):
         super().__init__()
         self.app = app
         self.tray = QSystemTrayIcon(create_tray_icon(True), app)
+        debug_log("tray_controller_initialized")
         self.tray.setToolTip(f"{APP_NAME} v{APP_VERSION}")
         self.rotation = 0.0
         self._last_static_state = None
@@ -1902,6 +2132,7 @@ class TrayController(QObject):
         self.window.show_near_tray()
 
     def refresh_tray_icon(self, force=False):
+        debug_log("refresh_tray_icon", force=force, sending=sending_event.is_set(), monitoring=monitoring)
         sending = sending_event.is_set()
         active = monitoring
 
@@ -1921,6 +2152,10 @@ class TrayController(QObject):
         self.refresh_tray_icon(force=True)
 
     def on_focus_changed(self, old, now):
+        debug_log("focus_changed", old=str(old), now=str(now), is_dragging=self.window.is_dragging)
+        if self.window.is_dragging:
+            self.focus_loss_timer.stop()
+            return
         if now is None:
             self.focus_loss_timer.start()
         else:
@@ -1939,12 +2174,18 @@ class TrayController(QObject):
         return managed
 
     def hide_interface_to_tray(self):
+        debug_log("hide_interface_to_tray_requested", is_dragging=self.window.is_dragging)
+        if self.window.is_dragging:
+            return
         for widget in self.iter_managed_windows():
             if widget is not self.window:
                 widget.hide()
         self.window.hide_to_tray()
 
     def handle_focus_loss(self):
+        debug_log("handle_focus_loss_started", is_dragging=self.window.is_dragging)
+        if self.window.is_dragging:
+            return
         visible_windows = [widget for widget in self.iter_managed_windows() if widget.isVisible()]
         if not visible_windows:
             return
@@ -1960,6 +2201,7 @@ class TrayController(QObject):
         self.hide_interface_to_tray()
 
     def on_tray_activated(self, reason):
+        debug_log("tray_activated", reason=int(reason))
         if reason == QSystemTrayIcon.Context:
             self.exit_bubble.show_near_cursor()
             return
@@ -1976,6 +2218,7 @@ class TrayController(QObject):
 
 
 def ensure_first_run(window: MainWindow):
+    debug_log("ensure_first_run")
     if not config.get("webhook"):
         window.open_webhook_page()
         window.show_near_tray()
@@ -1989,14 +2232,20 @@ def ensure_first_run(window: MainWindow):
 if __name__ == "__main__":
     BASE_DIR.mkdir(parents=True, exist_ok=True)
     save_config()
+    init_debug_session()
+    debug_log("application_bootstrap_started", argv=sys.argv)
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
     controller = TrayController(app)
+    debug_log("application_qt_created")
     ensure_first_run(controller.window)
 
     worker = threading.Thread(target=monitoring_loop, daemon=True)
     worker.start()
+    debug_log("monitoring_thread_started")
 
-    sys.exit(app.exec())
+    exit_code = app.exec()
+    debug_log("application_exit", exit_code=exit_code)
+    sys.exit(exit_code)
