@@ -40,7 +40,7 @@ except Exception:
 
 APP_NAME = "Discord Webhook Uploader"
 APP_DIR_NAME = "discord-webhook-uploader"
-APP_VERSION = "3.0.3"
+APP_VERSION = "3.0.4"
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 320
 BASE_DIR = Path(os.getenv("LOCALAPPDATA", str(Path.home()))) / APP_DIR_NAME
@@ -82,6 +82,27 @@ DEBUG_SESSION_STARTED_AT = datetime.datetime.now().isoformat(timespec="seconds")
 debug_events = []
 
 
+def _debug_enum_value(value):
+    try:
+        enum_name = value.name
+    except Exception:
+        enum_name = None
+    try:
+        enum_value = int(value.value)
+    except Exception:
+        try:
+            enum_value = int(value)
+        except Exception:
+            enum_value = None
+    if enum_name is not None and enum_value is not None:
+        return {"name": str(enum_name), "value": enum_value}
+    if enum_name is not None:
+        return str(enum_name)
+    if enum_value is not None:
+        return enum_value
+    return str(value)
+
+
 def _safe_debug_value(value):
     if isinstance(value, Path):
         return str(value)
@@ -91,6 +112,8 @@ def _safe_debug_value(value):
         return {str(k): _safe_debug_value(v) for k, v in value.items()}
     if isinstance(value, (list, tuple, set)):
         return [_safe_debug_value(v) for v in value]
+    if hasattr(value, "name") or hasattr(value, "value"):
+        return _debug_enum_value(value)
     return str(value)
 
 
@@ -1924,7 +1947,7 @@ class MainWindow(QWidget):
             self.show_near_tray()
 
     def ensure_expected_geometry(self):
-        debug_log("ensure_expected_geometry_started", width=self.width(), height=self.height(), window_state=int(self.windowState()))
+        debug_log("ensure_expected_geometry_started", width=self.width(), height=self.height(), window_state=self.windowState())
         if self._enforcing_geometry:
             return
         self._enforcing_geometry = True
@@ -2018,7 +2041,7 @@ class MainWindow(QWidget):
             self.schedule_geometry_fix()
 
     def changeEvent(self, event):
-        debug_log("main_window_change_event", event_type=int(event.type()), window_state=int(self.windowState()))
+        debug_log("main_window_change_event", event_type=event.type(), window_state=self.windowState())
         super().changeEvent(event)
         if event.type() == event.Type.WindowStateChange and self.windowState() != Qt.WindowNoState:
             self.schedule_geometry_fix()
