@@ -13,6 +13,7 @@ import datetime
 import traceback
 import subprocess
 import re
+import queue
 from pathlib import Path
 
 try:
@@ -26,7 +27,7 @@ except Exception:
     wintypes = None
 
 from send2trash import send2trash
-from PySide6.QtCore import Qt, Signal, QObject, QEasingCurve, QPropertyAnimation, QTimer, QRect, QSize, QRectF, QByteArray
+from PySide6.QtCore import Qt, Signal, QObject, QEasingCurve, QPropertyAnimation, QTimer, QRect, QSize, QRectF, QByteArray, QPoint
 from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap, QBrush, QLinearGradient, QIntValidator, QImage, QImageReader
 try:
     from PySide6.QtSvg import QSvgRenderer
@@ -58,9 +59,25 @@ except Exception:
 
 APP_NAME = "Discord Webhook Uploader"
 APP_DIR_NAME = "discord-webhook-uploader"
-APP_VERSION = "3.0.11"
+APP_VERSION = "3.0.12"
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
+
+
+def get_runtime_dir() -> Path:
+    try:
+        if getattr(sys, "frozen", False):
+            return Path(sys.executable).resolve().parent
+        if "__file__" in globals():
+            return Path(__file__).resolve().parent
+        return Path(sys.argv[0]).resolve().parent
+    except Exception:
+        return Path.cwd()
+
+
+RUNTIME_DIR = get_runtime_dir()
+LOCAL_FFMPEG_PATH = RUNTIME_DIR / "ffmpeg" / "bin" / "ffmpeg.exe"
+
 BASE_DIR = Path(os.getenv("LOCALAPPDATA", str(Path.home()))) / APP_DIR_NAME
 CONFIG_FILE = BASE_DIR / "config.json"
 LOG_FILE = BASE_DIR / "sent_log.json"
@@ -109,6 +126,8 @@ debug_lock = threading.RLock()
 thumb_lock = threading.RLock()
 send_lock = threading.Lock()
 sending_event = threading.Event()
+thumbnail_task_queue = queue.Queue()
+thumbnail_generation_epoch = 0
 monitoring = False
 stop_event = threading.Event()
 
@@ -384,6 +403,7 @@ class UISignals(QObject):
     status_changed = Signal(bool)
     toast = Signal(str, str)
     refresh_fields = Signal()
+    thumbnail_changed = Signal(str, bool)
 
 
 signals = UISignals()
@@ -765,8 +785,10 @@ def prune_thumbnail_log(limit: int = THUMB_LOG_LIMIT):
 
 
 def clear_thumbnail_log():
+    global thumbnail_generation_epoch
     debug_log("clear_thumbnail_log_started")
     with thumb_lock:
+        thumbnail_generation_epoch += 1
         if THUMBS_DIR.exists():
             for path in THUMBS_DIR.iterdir():
                 if path.is_file():
@@ -781,13 +803,29 @@ def make_thumbnail_storage_name(filename: str) -> str:
     stem = Path(filename).stem
     safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("._") or "file"
     safe_stem = safe_stem[:80]
-    return f"{time.time_ns()}_{safe_stem}.png"
+    stamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")[:-3]
+    return f"{stamp}_{safe_stem}.png"
+
+
+def create_empty_thumbnail_image(size: int = THUMB_MAX_DIMENSION):
+    image = QImage(size, size, QImage.Format_ARGB32)
+    image.fill(Qt.transparent)
+    return image
 
 
 def scaled_thumbnail_image(image: QImage, max_dimension: int = THUMB_MAX_DIMENSION):
     if image.isNull():
         return None
     return image.scaled(max_dimension, max_dimension, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+
+
+def save_thumbnail_image_to_path(image: QImage, target: Path):
+    ensure_thumbs_dir()
+    with thumb_lock:
+        saved = image.save(str(target), "PNG")
+    if saved:
+        prune_thumbnail_log()
+    return saved
 
 
 def load_image_for_thumbnail(source_path: Path):
@@ -799,8 +837,15 @@ def load_image_for_thumbnail(source_path: Path):
     return image
 
 
+def get_local_ffmpeg_path():
+    if LOCAL_FFMPEG_PATH.exists():
+        return str(LOCAL_FFMPEG_PATH)
+    debug_log("local_ffmpeg_missing", expected_path=str(LOCAL_FFMPEG_PATH))
+    return None
+
+
 def extract_video_frame_with_ffmpeg(source_path: Path):
-    ffmpeg_path = shutil.which("ffmpeg")
+    ffmpeg_path = get_local_ffmpeg_path()
     if not ffmpeg_path:
         return None
     startupinfo = None
@@ -828,6 +873,8 @@ def extract_video_frame_with_ffmpeg(source_path: Path):
                 if not image.isNull():
                     debug_log("video_thumbnail_created_with_ffmpeg", path=str(source_path), ffmpeg=ffmpeg_path)
                     return image
+            else:
+                debug_log("video_thumbnail_ffmpeg_nonzero", path=str(source_path), returncode=result.returncode, stderr=(result.stderr or b"").decode(errors="ignore")[:300])
         except Exception as exc:
             debug_log("video_thumbnail_ffmpeg_failed", path=str(source_path), error=str(exc))
             break
@@ -967,10 +1014,10 @@ def extract_source_thumbnail_image(source_path: Path):
         if image is not None and not image.isNull():
             return image
     if suffix in VIDEO_EXTENSIONS:
-        image = extract_shell_thumbnail_image(source_path, requested_size=256)
+        image = extract_video_frame_with_ffmpeg(source_path)
         if image is not None and not image.isNull():
             return image
-        image = extract_video_frame_with_ffmpeg(source_path)
+        image = extract_shell_thumbnail_image(source_path, requested_size=256)
         if image is not None and not image.isNull():
             return image
     image = extract_shell_thumbnail_image(source_path, requested_size=256)
@@ -979,8 +1026,24 @@ def extract_source_thumbnail_image(source_path: Path):
     return None
 
 
-def create_sent_thumbnail(source_path: str, original_filename: str):
+def get_thumbnail_generation_epoch():
+    with thumb_lock:
+        return thumbnail_generation_epoch
+
+
+def reserve_sent_thumbnail(original_filename: str):
+    target = THUMBS_DIR / make_thumbnail_storage_name(original_filename)
+    placeholder = create_empty_thumbnail_image()
+    if not save_thumbnail_image_to_path(placeholder, target):
+        debug_log("thumbnail_reserve_failed", target=str(target))
+        return None
+    debug_log("thumbnail_reserved", target=str(target))
+    return target
+
+
+def create_sent_thumbnail(target_path: Path, source_path: str):
     path = Path(source_path)
+    target = Path(target_path)
     if not path.exists():
         debug_log("thumbnail_creation_skipped", path=str(path), reason="missing_source")
         return False
@@ -993,19 +1056,71 @@ def create_sent_thumbnail(source_path: str, original_filename: str):
         if thumb_image is None or thumb_image.isNull():
             debug_log("thumbnail_creation_skipped", path=str(path), reason="scaling_failed")
             return False
-        ensure_thumbs_dir()
-        target = THUMBS_DIR / make_thumbnail_storage_name(original_filename)
-        with thumb_lock:
-            saved = thumb_image.save(str(target), "PNG")
+        saved = save_thumbnail_image_to_path(thumb_image, target)
         if not saved:
             debug_log("thumbnail_creation_failed", path=str(path), target=str(target), reason="save_failed")
             return False
-        prune_thumbnail_log()
         debug_log("thumbnail_created", source=str(path), target=str(target), width=thumb_image.width(), height=thumb_image.height())
         return True
     except Exception as exc:
         debug_log("thumbnail_creation_exception", path=str(path), error=str(exc))
         return False
+
+
+def delete_sent_source_file(path: str):
+    source = Path(path)
+    if not source.exists():
+        return
+    try:
+        send2trash(os.path.abspath(str(source)))
+        debug_log("sent_file_moved_to_trash", path=str(source))
+    except Exception as exc:
+        debug_log("sent_file_trash_failed", path=str(source), error=str(exc))
+
+
+def queue_thumbnail_generation(source_path: str, target_path: Path, delete_after_send: bool):
+    task = {
+        "source_path": str(source_path),
+        "target_path": str(target_path),
+        "delete_after_send": bool(delete_after_send),
+        "epoch": get_thumbnail_generation_epoch(),
+    }
+    thumbnail_task_queue.put(task)
+    debug_log("thumbnail_task_queued", source=str(source_path), target=str(target_path), delete_after_send=bool(delete_after_send), epoch=task["epoch"])
+
+
+def thumbnail_worker_loop():
+    debug_log("thumbnail_worker_started")
+    while not stop_event.is_set():
+        try:
+            task = thumbnail_task_queue.get(timeout=0.4)
+        except queue.Empty:
+            continue
+        try:
+            if task is None:
+                debug_log("thumbnail_worker_stop_requested")
+                break
+            source_path = task.get("source_path", "")
+            target_path = Path(task.get("target_path", ""))
+            task_epoch = int(task.get("epoch", -1))
+            current_epoch = get_thumbnail_generation_epoch()
+            generated = False
+            if target_path and task_epoch == current_epoch:
+                generated = create_sent_thumbnail(target_path, source_path)
+            else:
+                debug_log("thumbnail_task_skipped", source=source_path, target=str(target_path), task_epoch=task_epoch, current_epoch=current_epoch)
+            if task.get("delete_after_send", False):
+                delete_sent_source_file(source_path)
+            if target_path and task_epoch == current_epoch:
+                signals.thumbnail_changed.emit(str(target_path), False)
+            debug_log("thumbnail_task_finished", source=source_path, target=str(target_path), generated=generated, deleted=bool(task.get("delete_after_send", False)))
+        except Exception as exc:
+            debug_log("thumbnail_worker_exception", error=str(exc))
+        finally:
+            try:
+                thumbnail_task_queue.task_done()
+            except Exception:
+                pass
 
 
 def get_startup_command() -> str:
@@ -1137,15 +1252,20 @@ def send_test_message(template_text: str | None = None, use_embed: bool | None =
 
 def finalize_sent_file(path, filename, file_hash, upload_str):
     debug_log("finalize_sent_file_started", path=path, filename=filename)
-    thumbnail_saved = create_sent_thumbnail(path, filename)
-    if config.get("delete_after_send", True):
-        send2trash(os.path.abspath(path))
-        debug_log("sent_file_moved_to_trash", path=path)
+    reserved_thumbnail_path = reserve_sent_thumbnail(filename)
     with file_lock:
         sent_history.append({"file": filename, "hash": file_hash, "date": upload_str})
     save_json(LOG_FILE, sent_history)
-    signals.refresh_fields.emit()
-    debug_log("finalize_sent_file_finished", filename=filename, upload_time=upload_str, thumbnail_saved=thumbnail_saved)
+
+    delete_after_send = bool(config.get("delete_after_send", True))
+    thumbnail_saved = reserved_thumbnail_path is not None
+    if reserved_thumbnail_path is not None:
+        signals.thumbnail_changed.emit(str(reserved_thumbnail_path), True)
+        queue_thumbnail_generation(path, reserved_thumbnail_path, delete_after_send=delete_after_send)
+    elif delete_after_send:
+        delete_sent_source_file(path)
+
+    debug_log("finalize_sent_file_finished", filename=filename, upload_time=upload_str, thumbnail_saved=thumbnail_saved, reserved_thumbnail=str(reserved_thumbnail_path) if reserved_thumbnail_path else "")
 
 
 def send_file(path):
@@ -1925,29 +2045,183 @@ class HomeValueRow(QFrame):
 
 
 class ThumbnailTile(QLabel):
-    def __init__(self, size: int = THUMB_MAX_DIMENSION):
-        super().__init__()
+    def __init__(self, size: int = THUMB_MAX_DIMENSION, parent=None):
+        super().__init__(parent)
         self._size = size
+        self.thumb_path = ""
+        self._pixmap = QPixmap()
         self.setFixedSize(size, size)
         self.setAlignment(Qt.AlignCenter)
         self.setStyleSheet(
             f"background:{CARD}; border:1px solid {CARD_BORDER}; border-radius:12px;"
         )
+        self.opacity_effect = QGraphicsOpacityEffect(self)
+        self.opacity_effect.setOpacity(1.0)
+        self.setGraphicsEffect(self.opacity_effect)
 
-    def set_thumbnail(self, thumb_path: Path):
-        pixmap = QPixmap(str(thumb_path))
-        if pixmap.isNull():
-            self.clear()
+    def set_opacity(self, value: float):
+        self.opacity_effect.setOpacity(value)
+
+    def set_thumbnail(self, thumb_path: Path | str):
+        self.thumb_path = str(thumb_path) if thumb_path else ""
+        pixmap = QPixmap(self.thumb_path) if self.thumb_path else QPixmap()
+        self._pixmap = pixmap
+        self.update()
+
+    def clear_thumbnail(self):
+        self.thumb_path = ""
+        self._pixmap = QPixmap()
+        self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self._pixmap.isNull():
             return
-        scaled = pixmap.scaled(self._size, self._size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        self.setPixmap(scaled)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        inner = self.rect().adjusted(1, 1, -1, -1)
+        clip = QPainterPath()
+        clip.addRoundedRect(QRectF(inner), 11, 11)
+        painter.setClipPath(clip)
+
+        pixmap = self._pixmap
+        pw = max(1, pixmap.width())
+        ph = max(1, pixmap.height())
+        scale = max(inner.width() / pw, inner.height() / ph)
+        draw_w = max(1, int(round(pw * scale)))
+        draw_h = max(1, int(round(ph * scale)))
+        draw_x = inner.x() + (inner.width() - draw_w) / 2
+        draw_y = inner.y() + (inner.height() - draw_h) / 2
+        painter.drawPixmap(QRectF(draw_x, draw_y, draw_w, draw_h), pixmap, QRectF(0, 0, pw, ph))
+
+
+class ThumbnailStrip(QWidget):
+    def __init__(self, tile_size: int = THUMB_MAX_DIMENSION, visible_count: int = THUMB_HOME_VISIBLE_COUNT, spacing: int = 8, parent=None):
+        super().__init__(parent)
+        self.tile_size = tile_size
+        self.visible_count = visible_count
+        self.spacing = spacing
+        self.visible_tiles = []
+        self._animations = []
+        total_width = (tile_size * visible_count) + (spacing * max(0, visible_count - 1))
+        self.setFixedSize(total_width, tile_size)
+        self.setStyleSheet("background: transparent;")
+
+    def slot_x(self, index: int) -> int:
+        return index * (self.tile_size + self.spacing)
+
+    def has_items(self) -> bool:
+        return bool(self.visible_tiles)
+
+    def stop_animations(self):
+        for anim in list(self._animations):
+            try:
+                anim.stop()
+            except Exception:
+                pass
+        self._animations.clear()
+
+    def _track_animation(self, animation):
+        self._animations.append(animation)
+
+        def cleanup():
+            if animation in self._animations:
+                self._animations.remove(animation)
+        animation.finished.connect(cleanup)
+        animation.start()
+
+    def clear_tiles(self):
+        self.stop_animations()
+        for tile in self.visible_tiles:
+            tile.hide()
+            tile.deleteLater()
+        self.visible_tiles = []
+
+    def set_paths(self, paths):
+        self.clear_tiles()
+        for index, path in enumerate(paths[:self.visible_count]):
+            tile = ThumbnailTile(self.tile_size, self)
+            tile.set_thumbnail(path)
+            tile.move(self.slot_x(index), 0)
+            tile.set_opacity(1.0)
+            tile.show()
+            self.visible_tiles.append(tile)
+
+    def refresh_from_disk(self, animate: bool = False, new_path: str = ""):
+        paths = [str(path) for path in iter_saved_thumbnail_files(limit=self.visible_count)]
+        current_paths = [tile.thumb_path for tile in self.visible_tiles]
+        if not animate or not new_path or not paths:
+            self.set_paths(paths)
+            return
+        if str(new_path) in current_paths:
+            self.update_tile_content(str(new_path))
+            return
+        if str(new_path) != paths[0]:
+            self.set_paths(paths)
+            return
+        self.animate_insert(str(new_path))
+
+    def update_tile_content(self, thumb_path: str) -> bool:
+        thumb_path = str(thumb_path)
+        for tile in self.visible_tiles:
+            if tile.thumb_path == thumb_path:
+                tile.set_thumbnail(thumb_path)
+                return True
+        return False
+
+    def animate_insert(self, new_path: str):
+        existing_paths = [tile.thumb_path for tile in self.visible_tiles]
+        if new_path in existing_paths:
+            self.update_tile_content(new_path)
+            return
+
+        self.stop_animations()
+        outgoing_tile = self.visible_tiles[-1] if len(self.visible_tiles) >= self.visible_count else None
+        moving_tiles = self.visible_tiles[:-1] if outgoing_tile else list(self.visible_tiles)
+
+        new_tile = ThumbnailTile(self.tile_size, self)
+        new_tile.set_thumbnail(new_path)
+        new_tile.move(self.slot_x(0), 0)
+        new_tile.set_opacity(0.0)
+        new_tile.show()
+        new_tile.raise_()
+
+        fade_in = QPropertyAnimation(new_tile.opacity_effect, b"opacity", self)
+        fade_in.setDuration(180)
+        fade_in.setStartValue(0.0)
+        fade_in.setEndValue(1.0)
+        fade_in.setEasingCurve(QEasingCurve.OutCubic)
+        self._track_animation(fade_in)
+
+        for index, tile in enumerate(moving_tiles, start=1):
+            move_anim = QPropertyAnimation(tile, b"pos", self)
+            move_anim.setDuration(220)
+            move_anim.setStartValue(tile.pos())
+            move_anim.setEndValue(QPoint(self.slot_x(index), 0))
+            move_anim.setEasingCurve(QEasingCurve.InOutCubic)
+            self._track_animation(move_anim)
+
+        if outgoing_tile is not None:
+            fade_out = QPropertyAnimation(outgoing_tile.opacity_effect, b"opacity", self)
+            fade_out.setDuration(140)
+            fade_out.setStartValue(outgoing_tile.opacity_effect.opacity())
+            fade_out.setEndValue(0.0)
+            fade_out.setEasingCurve(QEasingCurve.OutCubic)
+
+            def dispose_outgoing(tile=outgoing_tile):
+                tile.hide()
+                tile.deleteLater()
+            fade_out.finished.connect(dispose_outgoing)
+            self._track_animation(fade_out)
+
+        self.visible_tiles = [new_tile] + moving_tiles[: self.visible_count - 1]
 
 
 class HomePage(PageBase):
     def __init__(self, window):
         super().__init__(f"{APP_NAME} v{APP_VERSION}", "Simple monitoring, polished visuals, and everything inside the same interface.")
         self.window = window
-        self.thumb_slots = []
 
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 2)
@@ -1981,20 +2255,9 @@ class HomePage(PageBase):
         self.history_label.setStyleSheet(f"color:{TEXT}; font: 700 9px 'Segoe UI'; background: transparent; border: none;")
         self.history_layout.addWidget(self.history_label)
 
-        self.thumbs_row = QWidget()
-        self.thumbs_row.setStyleSheet("background: transparent;")
-        self.thumbs_layout = QHBoxLayout(self.thumbs_row)
-        self.thumbs_layout.setContentsMargins(0, 0, 0, 0)
-        self.thumbs_layout.setSpacing(8)
-        self.thumbs_layout.setAlignment(Qt.AlignLeft)
+        self.thumb_strip = ThumbnailStrip(parent=self.history_wrap)
+        self.history_layout.addWidget(self.thumb_strip, 0, Qt.AlignLeft)
 
-        for _ in range(THUMB_HOME_VISIBLE_COUNT):
-            tile = ThumbnailTile(THUMB_MAX_DIMENSION)
-            tile.hide()
-            self.thumb_slots.append(tile)
-            self.thumbs_layout.addWidget(tile)
-
-        self.history_layout.addWidget(self.thumbs_row)
         self.body.addWidget(self.history_wrap)
         self.history_wrap.hide()
 
@@ -2026,17 +2289,17 @@ class HomePage(PageBase):
         self.update_pause_visual()
 
     def refresh_thumbnails(self):
-        recent = iter_saved_thumbnail_files(limit=THUMB_HOME_VISIBLE_COUNT)
-        for slot in self.thumb_slots:
-            slot.clear()
-            slot.hide()
-        if not recent:
-            self.history_wrap.hide()
-            return
-        for slot, thumb_path in zip(self.thumb_slots, recent):
-            slot.set_thumbnail(thumb_path)
-            slot.show()
-        self.history_wrap.show()
+        self.thumb_strip.refresh_from_disk(animate=False)
+        self.history_wrap.setVisible(self.thumb_strip.has_items())
+
+    def on_thumbnail_changed(self, thumb_path: str, animate: bool):
+        if animate:
+            self.thumb_strip.refresh_from_disk(animate=True, new_path=thumb_path)
+        else:
+            updated = self.thumb_strip.update_tile_content(thumb_path)
+            if not updated and not self.thumb_strip.has_items():
+                self.thumb_strip.refresh_from_disk(animate=False)
+        self.history_wrap.setVisible(self.thumb_strip.has_items())
 
     def update_pause_visual(self):
         if monitoring:
@@ -2615,6 +2878,7 @@ class MainWindow(QWidget):
         signals.status_changed.connect(self.on_status_changed)
         signals.toast.connect(self.show_message)
         signals.refresh_fields.connect(self.refresh_all)
+        signals.thumbnail_changed.connect(self.home_page.on_thumbnail_changed)
 
         self.refresh_all()
         self.go_home(animated=False)
@@ -3224,10 +3488,18 @@ if __name__ == "__main__":
     debug_log("application_qt_created")
     ensure_first_run(controller.window)
 
+    thumb_worker = threading.Thread(target=thumbnail_worker_loop, daemon=True)
+    thumb_worker.start()
+    debug_log("thumbnail_worker_thread_started")
+
     worker = threading.Thread(target=monitoring_loop, daemon=True)
     worker.start()
     debug_log("monitoring_thread_started")
 
     exit_code = app.exec()
+    try:
+        thumbnail_task_queue.put_nowait(None)
+    except Exception:
+        pass
     debug_log("application_exit", exit_code=exit_code)
     sys.exit(exit_code)
