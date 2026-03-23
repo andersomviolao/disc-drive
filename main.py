@@ -11,6 +11,8 @@ import shutil
 import hashlib
 import datetime
 import traceback
+import subprocess
+import re
 from pathlib import Path
 
 try:
@@ -18,9 +20,14 @@ try:
 except Exception:
     ctypes = None
 
+try:
+    from ctypes import wintypes
+except Exception:
+    wintypes = None
+
 from send2trash import send2trash
 from PySide6.QtCore import Qt, Signal, QObject, QEasingCurve, QPropertyAnimation, QTimer, QRect, QSize, QRectF, QByteArray
-from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap, QBrush, QLinearGradient, QIntValidator
+from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap, QBrush, QLinearGradient, QIntValidator, QImage, QImageReader
 try:
     from PySide6.QtSvg import QSvgRenderer
 except Exception:
@@ -41,6 +48,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QTextEdit,
     QSizePolicy,
+    QGridLayout,
     )
 
 try:
@@ -50,7 +58,7 @@ except Exception:
 
 APP_NAME = "Discord Webhook Uploader"
 APP_DIR_NAME = "discord-webhook-uploader"
-APP_VERSION = "3.0.10"
+APP_VERSION = "3.0.11"
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 BASE_DIR = Path(os.getenv("LOCALAPPDATA", str(Path.home()))) / APP_DIR_NAME
@@ -61,6 +69,12 @@ CUSTOM_PROFILE_IMAGE_FILE = BASE_DIR / "profile-img.png"
 DEFAULT_PLACEHOLDER_IMAGE_FILE = BASE_DIR / "default-img.png"
 DEFAULT_PLACEHOLDER_IMAGE_URL = "https://cdn.prod.website-files.com/6257adef93867e50d84d30e2/66e278299a53f5bf88615e90_Symbol.svg"
 WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE = BASE_DIR / "webhook-default-avatar.png"
+THUMBS_DIR = BASE_DIR / "thumbs-log"
+THUMB_MAX_DIMENSION = 64
+THUMB_HOME_VISIBLE_COUNT = 7
+THUMB_LOG_LIMIT = 1000
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm", ".wmv", ".mpeg", ".mpg", ".m2ts", ".ts"}
 DAYS_OF_WEEK = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 BG = "#0f1012"
@@ -92,6 +106,7 @@ STARTUP_REG_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
 file_lock = threading.RLock()
 debug_lock = threading.RLock()
+thumb_lock = threading.RLock()
 send_lock = threading.Lock()
 sending_event = threading.Event()
 monitoring = False
@@ -720,6 +735,279 @@ def sync_webhook_avatar(force: bool = False):
         return False
 
 
+def _thumbnail_sort_key(path: Path):
+    return path.name
+
+
+def ensure_thumbs_dir():
+    THUMBS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def iter_saved_thumbnail_files(limit: int | None = None):
+    with thumb_lock:
+        if not THUMBS_DIR.exists():
+            return []
+        files = [path for path in THUMBS_DIR.iterdir() if path.is_file() and path.suffix.lower() == ".png"]
+    files.sort(key=_thumbnail_sort_key, reverse=True)
+    if limit is not None:
+        return files[:limit]
+    return files
+
+
+def prune_thumbnail_log(limit: int = THUMB_LOG_LIMIT):
+    files = iter_saved_thumbnail_files()
+    for path in files[limit:]:
+        try:
+            path.unlink()
+            debug_log("thumbnail_pruned", path=str(path))
+        except Exception as exc:
+            debug_log("thumbnail_prune_failed", path=str(path), error=str(exc))
+
+
+def clear_thumbnail_log():
+    debug_log("clear_thumbnail_log_started")
+    with thumb_lock:
+        if THUMBS_DIR.exists():
+            for path in THUMBS_DIR.iterdir():
+                if path.is_file():
+                    try:
+                        path.unlink()
+                    except Exception as exc:
+                        debug_log("clear_thumbnail_log_failed", path=str(path), error=str(exc))
+    debug_log("clear_thumbnail_log_finished")
+
+
+def make_thumbnail_storage_name(filename: str) -> str:
+    stem = Path(filename).stem
+    safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("._") or "file"
+    safe_stem = safe_stem[:80]
+    return f"{time.time_ns()}_{safe_stem}.png"
+
+
+def scaled_thumbnail_image(image: QImage, max_dimension: int = THUMB_MAX_DIMENSION):
+    if image.isNull():
+        return None
+    return image.scaled(max_dimension, max_dimension, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+
+
+def load_image_for_thumbnail(source_path: Path):
+    reader = QImageReader(str(source_path))
+    reader.setAutoTransform(True)
+    image = reader.read()
+    if image.isNull():
+        return None
+    return image
+
+
+def extract_video_frame_with_ffmpeg(source_path: Path):
+    ffmpeg_path = shutil.which("ffmpeg")
+    if not ffmpeg_path:
+        return None
+    startupinfo = None
+    creationflags = 0
+    if os.name == "nt":
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    commands = [
+        [ffmpeg_path, "-hide_banner", "-loglevel", "error", "-ss", "0.50", "-i", str(source_path), "-frames:v", "1", "-f", "image2pipe", "-vcodec", "png", "-"],
+        [ffmpeg_path, "-hide_banner", "-loglevel", "error", "-ss", "0.00", "-i", str(source_path), "-frames:v", "1", "-f", "image2pipe", "-vcodec", "png", "-"],
+    ]
+    for cmd in commands:
+        try:
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=20,
+                startupinfo=startupinfo,
+                creationflags=creationflags,
+            )
+            if result.returncode == 0 and result.stdout:
+                image = QImage.fromData(result.stdout)
+                if not image.isNull():
+                    debug_log("video_thumbnail_created_with_ffmpeg", path=str(source_path), ffmpeg=ffmpeg_path)
+                    return image
+        except Exception as exc:
+            debug_log("video_thumbnail_ffmpeg_failed", path=str(source_path), error=str(exc))
+            break
+    return None
+
+
+def extract_shell_thumbnail_image(source_path: Path, requested_size: int = 256):
+    if os.name != "nt" or ctypes is None or wintypes is None:
+        return None
+    try:
+        class GUID(ctypes.Structure):
+            _fields_ = [
+                ("Data1", wintypes.DWORD),
+                ("Data2", wintypes.WORD),
+                ("Data3", wintypes.WORD),
+                ("Data4", ctypes.c_ubyte * 8),
+            ]
+
+            def __init__(self, value: str):
+                super().__init__()
+                import uuid
+                parsed = uuid.UUID(value)
+                self.Data1, self.Data2, self.Data3, rest = parsed.fields[0], parsed.fields[1], parsed.fields[2], parsed.bytes[8:]
+                self.Data4[:] = rest
+
+        class SIZE(ctypes.Structure):
+            _fields_ = [("cx", ctypes.c_long), ("cy", ctypes.c_long)]
+
+        class BITMAP(ctypes.Structure):
+            _fields_ = [
+                ("bmType", ctypes.c_long),
+                ("bmWidth", ctypes.c_long),
+                ("bmHeight", ctypes.c_long),
+                ("bmWidthBytes", ctypes.c_long),
+                ("bmPlanes", ctypes.c_ushort),
+                ("bmBitsPixel", ctypes.c_ushort),
+                ("bmBits", ctypes.c_void_p),
+            ]
+
+        class BITMAPINFOHEADER(ctypes.Structure):
+            _fields_ = [
+                ("biSize", wintypes.DWORD),
+                ("biWidth", ctypes.c_long),
+                ("biHeight", ctypes.c_long),
+                ("biPlanes", wintypes.WORD),
+                ("biBitCount", wintypes.WORD),
+                ("biCompression", wintypes.DWORD),
+                ("biSizeImage", wintypes.DWORD),
+                ("biXPelsPerMeter", ctypes.c_long),
+                ("biYPelsPerMeter", ctypes.c_long),
+                ("biClrUsed", wintypes.DWORD),
+                ("biClrImportant", wintypes.DWORD),
+            ]
+
+        class RGBQUAD(ctypes.Structure):
+            _fields_ = [("rgbBlue", ctypes.c_ubyte), ("rgbGreen", ctypes.c_ubyte), ("rgbRed", ctypes.c_ubyte), ("rgbReserved", ctypes.c_ubyte)]
+
+        class BITMAPINFO(ctypes.Structure):
+            _fields_ = [("bmiHeader", BITMAPINFOHEADER), ("bmiColors", RGBQUAD * 1)]
+
+        shell32 = ctypes.windll.shell32
+        ole32 = ctypes.windll.ole32
+        gdi32 = ctypes.windll.gdi32
+        user32 = ctypes.windll.user32
+
+        ole32.CoInitialize(None)
+        try:
+            iid = GUID("bcc18b79-ba16-442f-80c4-8a59c30c463b")
+            factory_ptr = ctypes.c_void_p()
+            shell32.SHCreateItemFromParsingName.argtypes = [wintypes.LPCWSTR, ctypes.c_void_p, ctypes.POINTER(GUID), ctypes.POINTER(ctypes.c_void_p)]
+            shell32.SHCreateItemFromParsingName.restype = ctypes.c_long
+            hr = shell32.SHCreateItemFromParsingName(str(source_path), None, ctypes.byref(iid), ctypes.byref(factory_ptr))
+            if hr != 0 or not factory_ptr.value:
+                return None
+
+            vtable = ctypes.cast(factory_ptr, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))).contents
+            release = ctypes.WINFUNCTYPE(ctypes.c_ulong, ctypes.c_void_p)(vtable[2])
+            get_image = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_void_p, SIZE, ctypes.c_int, ctypes.POINTER(wintypes.HBITMAP))(vtable[3])
+
+            SIIGBF_BIGGERSIZEOK = 0x00000001
+            SIIGBF_THUMBNAILONLY = 0x00000008
+            flags = SIIGBF_BIGGERSIZEOK | SIIGBF_THUMBNAILONLY
+            hbitmap = wintypes.HBITMAP()
+            hr = get_image(factory_ptr, SIZE(requested_size, requested_size), flags, ctypes.byref(hbitmap))
+            release(factory_ptr)
+            if hr != 0 or not hbitmap.value:
+                return None
+
+            bmp = BITMAP()
+            if not gdi32.GetObjectW(hbitmap, ctypes.sizeof(BITMAP), ctypes.byref(bmp)):
+                gdi32.DeleteObject(hbitmap)
+                return None
+
+            width = int(bmp.bmWidth)
+            height = int(bmp.bmHeight)
+            if width <= 0 or height <= 0:
+                gdi32.DeleteObject(hbitmap)
+                return None
+
+            bmi = BITMAPINFO()
+            bmi.bmiHeader.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+            bmi.bmiHeader.biWidth = width
+            bmi.bmiHeader.biHeight = -height
+            bmi.bmiHeader.biPlanes = 1
+            bmi.bmiHeader.biBitCount = 32
+            bmi.bmiHeader.biCompression = 0
+
+            buffer = ctypes.create_string_buffer(width * height * 4)
+            hdc = user32.GetDC(None)
+            try:
+                result = gdi32.GetDIBits(hdc, hbitmap, 0, height, buffer, ctypes.byref(bmi), 0)
+            finally:
+                user32.ReleaseDC(None, hdc)
+                gdi32.DeleteObject(hbitmap)
+
+            if result == 0:
+                return None
+
+            image = QImage(buffer.raw, width, height, width * 4, QImage.Format_ARGB32)
+            copied = image.copy()
+            if copied.isNull():
+                return None
+            debug_log("shell_thumbnail_created", path=str(source_path), width=width, height=height)
+            return copied
+        finally:
+            ole32.CoUninitialize()
+    except Exception as exc:
+        debug_log("shell_thumbnail_failed", path=str(source_path), error=str(exc))
+        return None
+
+
+def extract_source_thumbnail_image(source_path: Path):
+    suffix = source_path.suffix.lower()
+    image = None
+    if suffix in IMAGE_EXTENSIONS:
+        image = load_image_for_thumbnail(source_path)
+        if image is not None and not image.isNull():
+            return image
+    if suffix in VIDEO_EXTENSIONS:
+        image = extract_shell_thumbnail_image(source_path, requested_size=256)
+        if image is not None and not image.isNull():
+            return image
+        image = extract_video_frame_with_ffmpeg(source_path)
+        if image is not None and not image.isNull():
+            return image
+    image = extract_shell_thumbnail_image(source_path, requested_size=256)
+    if image is not None and not image.isNull():
+        return image
+    return None
+
+
+def create_sent_thumbnail(source_path: str, original_filename: str):
+    path = Path(source_path)
+    if not path.exists():
+        debug_log("thumbnail_creation_skipped", path=str(path), reason="missing_source")
+        return False
+    try:
+        image = extract_source_thumbnail_image(path)
+        if image is None or image.isNull():
+            debug_log("thumbnail_creation_skipped", path=str(path), reason="image_unavailable")
+            return False
+        thumb_image = scaled_thumbnail_image(image, THUMB_MAX_DIMENSION)
+        if thumb_image is None or thumb_image.isNull():
+            debug_log("thumbnail_creation_skipped", path=str(path), reason="scaling_failed")
+            return False
+        ensure_thumbs_dir()
+        target = THUMBS_DIR / make_thumbnail_storage_name(original_filename)
+        with thumb_lock:
+            saved = thumb_image.save(str(target), "PNG")
+        if not saved:
+            debug_log("thumbnail_creation_failed", path=str(path), target=str(target), reason="save_failed")
+            return False
+        prune_thumbnail_log()
+        debug_log("thumbnail_created", source=str(path), target=str(target), width=thumb_image.width(), height=thumb_image.height())
+        return True
+    except Exception as exc:
+        debug_log("thumbnail_creation_exception", path=str(path), error=str(exc))
+        return False
+
+
 def get_startup_command() -> str:
     script_path = Path(sys.argv[0]).resolve()
     if getattr(sys, "frozen", False):
@@ -849,13 +1137,15 @@ def send_test_message(template_text: str | None = None, use_embed: bool | None =
 
 def finalize_sent_file(path, filename, file_hash, upload_str):
     debug_log("finalize_sent_file_started", path=path, filename=filename)
+    thumbnail_saved = create_sent_thumbnail(path, filename)
     if config.get("delete_after_send", True):
         send2trash(os.path.abspath(path))
         debug_log("sent_file_moved_to_trash", path=path)
     with file_lock:
         sent_history.append({"file": filename, "hash": file_hash, "date": upload_str})
     save_json(LOG_FILE, sent_history)
-    debug_log("finalize_sent_file_finished", filename=filename, upload_time=upload_str)
+    signals.refresh_fields.emit()
+    debug_log("finalize_sent_file_finished", filename=filename, upload_time=upload_str, thumbnail_saved=thumbnail_saved)
 
 
 def send_file(path):
@@ -1634,10 +1924,30 @@ class HomeValueRow(QFrame):
         )
 
 
+class ThumbnailTile(QLabel):
+    def __init__(self, size: int = THUMB_MAX_DIMENSION):
+        super().__init__()
+        self._size = size
+        self.setFixedSize(size, size)
+        self.setAlignment(Qt.AlignCenter)
+        self.setStyleSheet(
+            f"background:{CARD}; border:1px solid {CARD_BORDER}; border-radius:12px;"
+        )
+
+    def set_thumbnail(self, thumb_path: Path):
+        pixmap = QPixmap(str(thumb_path))
+        if pixmap.isNull():
+            self.clear()
+            return
+        scaled = pixmap.scaled(self._size, self._size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self.setPixmap(scaled)
+
+
 class HomePage(PageBase):
     def __init__(self, window):
         super().__init__(f"{APP_NAME} v{APP_VERSION}", "Simple monitoring, polished visuals, and everything inside the same interface.")
         self.window = window
+        self.thumb_slots = []
 
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 2)
@@ -1660,6 +1970,33 @@ class HomePage(PageBase):
 
         self.folder_row = HomeValueRow(self.window, "Watched Folder", "Edit", self.window.open_folder_page)
         self.body.addWidget(self.folder_row)
+
+        self.history_wrap = QWidget()
+        self.history_wrap.setStyleSheet("background: transparent;")
+        self.history_layout = QVBoxLayout(self.history_wrap)
+        self.history_layout.setContentsMargins(0, 0, 0, 0)
+        self.history_layout.setSpacing(6)
+
+        self.history_label = QLabel("History")
+        self.history_label.setStyleSheet(f"color:{TEXT}; font: 700 9px 'Segoe UI'; background: transparent; border: none;")
+        self.history_layout.addWidget(self.history_label)
+
+        self.thumbs_row = QWidget()
+        self.thumbs_row.setStyleSheet("background: transparent;")
+        self.thumbs_layout = QHBoxLayout(self.thumbs_row)
+        self.thumbs_layout.setContentsMargins(0, 0, 0, 0)
+        self.thumbs_layout.setSpacing(8)
+        self.thumbs_layout.setAlignment(Qt.AlignLeft)
+
+        for _ in range(THUMB_HOME_VISIBLE_COUNT):
+            tile = ThumbnailTile(THUMB_MAX_DIMENSION)
+            tile.hide()
+            self.thumb_slots.append(tile)
+            self.thumbs_layout.addWidget(tile)
+
+        self.history_layout.addWidget(self.thumbs_row)
+        self.body.addWidget(self.history_wrap)
+        self.history_wrap.hide()
 
         self.body.addStretch(1)
 
@@ -1685,7 +2022,21 @@ class HomePage(PageBase):
     def refresh(self):
         self.webhook_row.set_value(config.get("webhook", ""), "No webhook configured")
         self.folder_row.set_value(config.get("folder", ""), "No folder selected")
+        self.refresh_thumbnails()
         self.update_pause_visual()
+
+    def refresh_thumbnails(self):
+        recent = iter_saved_thumbnail_files(limit=THUMB_HOME_VISIBLE_COUNT)
+        for slot in self.thumb_slots:
+            slot.clear()
+            slot.hide()
+        if not recent:
+            self.history_wrap.hide()
+            return
+        for slot, thumb_path in zip(self.thumb_slots, recent):
+            slot.set_thumbnail(thumb_path)
+            slot.show()
+        self.history_wrap.show()
 
     def update_pause_visual(self):
         if monitoring:
@@ -2200,6 +2551,8 @@ def clear_sent_log():
     with file_lock:
         sent_history = []
     save_json(LOG_FILE, sent_history)
+    clear_thumbnail_log()
+    signals.refresh_fields.emit()
     debug_log("clear_sent_log_finished")
 
 
@@ -2858,6 +3211,7 @@ def ensure_first_run(window: MainWindow):
 
 if __name__ == "__main__":
     BASE_DIR.mkdir(parents=True, exist_ok=True)
+    ensure_thumbs_dir()
     save_config()
     init_debug_session()
     debug_log("application_bootstrap_started", argv=sys.argv)
