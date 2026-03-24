@@ -57,9 +57,9 @@ try:
 except Exception:
     winreg = None
 
-APP_NAME = "Discord Webhook Uploader"
-APP_DIR_NAME = "discord-webhook-uploader"
-APP_VERSION = "3.0.13"
+APP_NAME = "disc-drive"
+APP_DIR_NAME = "disc-drive"
+APP_VERSION = "3.0.14"
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -2430,7 +2430,7 @@ class PostTemplatePage(PageBase):
         preview_row.addWidget(self.avatar_preview, 0, Qt.AlignVCenter)
 
         self.name_input = QLineEdit()
-        self.name_input.setPlaceholderText("discord-webhook-uploader")
+        self.name_input.setPlaceholderText(APP_NAME)
         self.name_input.setMinimumHeight(40)
         self.name_input.setStyleSheet(self.window.preview_name_style())
         self.name_input.editingFinished.connect(self.on_name_editing_finished)
@@ -2502,7 +2502,7 @@ class PostTemplatePage(PageBase):
         has_custom_state = CUSTOM_PROFILE_IMAGE_FILE.exists() or bool((self.name_input.text() or "").strip()) or bool(get_custom_webhook_name())
         self.clear_profile_btn.setEnabled(has_custom_state)
         self.clear_profile_btn.setStyleSheet(self.window.small_button_style(enabled=has_custom_state, accent=BLUE))
-        default_name = (config.get("webhook_default_name", "") or "").strip() or "webhook-uploader"
+        default_name = (config.get("webhook_default_name", "") or "").strip() or APP_NAME
         self.name_input.setPlaceholderText(default_name)
 
     def refresh(self):
@@ -2820,9 +2820,9 @@ class SettingsPage(PageBase):
         BASE_DIR.mkdir(parents=True, exist_ok=True)
         try:
             os.startfile(str(BASE_DIR))
-            self.window.show_message("info", "Discord Webhook Uploader folder opened.")
+            self.window.show_message("info", f"{APP_NAME} folder opened.")
         except Exception:
-            self.window.show_message("error", "Could not open the Discord Webhook Uploader folder.")
+            self.window.show_message("error", f"Could not open the {APP_NAME} folder.")
 
 
 
