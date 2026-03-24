@@ -59,7 +59,7 @@ except Exception:
 
 APP_NAME = "disc-drive"
 APP_DIR_NAME = "disc-drive"
-APP_VERSION = "3.0.18"
+APP_VERSION = "3.0.20"
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -89,7 +89,8 @@ LEGACY_PROFILE_IMAGE_FILE = BASE_DIR / "profile-img.png"
 AVATAR_MODE_AUTO = "auto"
 AVATAR_MODE_DEFAULT = "default"
 THUMBS_DIR = BASE_DIR / "thumbs-log"
-THUMB_MAX_DIMENSION = 64
+THUMB_TILE_SIZE = 64
+THUMB_CACHE_DIMENSION = 300
 THUMB_HOME_VISIBLE_COUNT = 7
 THUMB_LOG_LIMIT = 1000
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
@@ -853,13 +854,13 @@ def make_thumbnail_storage_name(filename: str) -> str:
     return f"{stamp}_{safe_stem}.png"
 
 
-def create_empty_thumbnail_image(size: int = THUMB_MAX_DIMENSION):
+def create_empty_thumbnail_image(size: int = THUMB_TILE_SIZE):
     image = QImage(size, size, QImage.Format_ARGB32)
     image.fill(Qt.transparent)
     return image
 
 
-def scaled_thumbnail_image(image: QImage, max_dimension: int = THUMB_MAX_DIMENSION):
+def scaled_thumbnail_image(image: QImage, max_dimension: int = THUMB_CACHE_DIMENSION):
     if image.isNull():
         return None
     return image.scaled(max_dimension, max_dimension, Qt.KeepAspectRatio, Qt.SmoothTransformation)
@@ -1098,7 +1099,7 @@ def create_sent_thumbnail(target_path: Path, source_path: str):
         if image is None or image.isNull():
             debug_log("thumbnail_creation_skipped", path=str(path), reason="image_unavailable")
             return False
-        thumb_image = scaled_thumbnail_image(image, THUMB_MAX_DIMENSION)
+        thumb_image = scaled_thumbnail_image(image, THUMB_CACHE_DIMENSION)
         if thumb_image is None or thumb_image.isNull():
             debug_log("thumbnail_creation_skipped", path=str(path), reason="scaling_failed")
             return False
@@ -2088,7 +2089,7 @@ class HomeValueRow(QFrame):
 
 
 class ThumbnailTile(QLabel):
-    def __init__(self, size: int = THUMB_MAX_DIMENSION, parent=None):
+    def __init__(self, size: int = THUMB_TILE_SIZE, parent=None):
         super().__init__(parent)
         self._size = size
         self.thumb_path = ""
@@ -2140,7 +2141,7 @@ class ThumbnailTile(QLabel):
 
 
 class ThumbnailStrip(QWidget):
-    def __init__(self, tile_size: int = THUMB_MAX_DIMENSION, visible_count: int = THUMB_HOME_VISIBLE_COUNT, spacing: int = 8, parent=None):
+    def __init__(self, tile_size: int = THUMB_TILE_SIZE, visible_count: int = THUMB_HOME_VISIBLE_COUNT, spacing: int = 8, parent=None):
         super().__init__(parent)
         self.tile_size = tile_size
         self.visible_count = visible_count
