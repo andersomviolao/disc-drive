@@ -27,12 +27,8 @@ except Exception:
     wintypes = None
 
 from send2trash import send2trash
-from PySide6.QtCore import Qt, Signal, QObject, QEasingCurve, QPropertyAnimation, QTimer, QRect, QSize, QRectF, QByteArray, QPoint
+from PySide6.QtCore import Qt, Signal, QObject, QEasingCurve, QPropertyAnimation, QTimer, QRect, QSize, QRectF, QByteArray, QPoint, QBuffer, QIODevice
 from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap, QBrush, QLinearGradient, QIntValidator, QImage, QImageReader
-try:
-    from PySide6.QtSvg import QSvgRenderer
-except Exception:
-    QSvgRenderer = None
 from PySide6.QtWidgets import (
     QApplication,
     QWidget,
@@ -59,7 +55,7 @@ except Exception:
 
 APP_NAME = "disc-drive"
 APP_DIR_NAME = "disc-drive"
-APP_VERSION = "3.0.21"
+APP_VERSION = "3.0.22"
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -82,8 +78,8 @@ BASE_DIR = Path(os.getenv("LOCALAPPDATA", str(Path.home()))) / APP_DIR_NAME
 CONFIG_FILE = BASE_DIR / "config.json"
 LOG_FILE = BASE_DIR / "sent_log.json"
 DEBUG_FILE = BASE_DIR / "debug.json"
-DEFAULT_PLACEHOLDER_IMAGE_FILE = BASE_DIR / "default-img.png"
-DEFAULT_PLACEHOLDER_IMAGE_URL = "https://cdn.prod.website-files.com/6257adef93867e50d84d30e2/66e278299a53f5bf88615e90_Symbol.svg"
+FILES_DIR = BASE_DIR / "files"
+DEFAULT_PLACEHOLDER_IMAGE_FILE = FILES_DIR / "default-img.png"
 WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE = BASE_DIR / "webhook-default-avatar.png"
 LEGACY_PROFILE_IMAGE_FILE = BASE_DIR / "profile-img.png"
 AVATAR_MODE_AUTO = "auto"
@@ -103,7 +99,7 @@ TEXT = "#d8d8d8"
 MUTED = "#7f7f7f"
 FIELD_BG = "#222428"
 FIELD_TEXT = "#e9ecf2"
-BLUE = "#4a9bff"
+BLUE = "#5865F2"
 YELLOW = "#f2b01e"
 ICON_GRAY = "#7a7f89"
 HOVER_DARK = "#222428"
@@ -111,7 +107,7 @@ RED = "#ff5f73"
 GREEN = "#4fd18b"
 CARD = "#1a1c20"
 CARD_BORDER = "#252830"
-DEFAULT_EMBED_COLOR = "#F54927"
+DEFAULT_EMBED_COLOR = BLUE
 
 FONT_TINY = 8
 FONT_BASE = 9
@@ -361,7 +357,7 @@ def normalize_hex_color(value: str, default: str = DEFAULT_EMBED_COLOR) -> str:
     parsed = parse_hex_color(value)
     if parsed:
         return parsed
-    return parse_hex_color(default) or "#F54927"
+    return parse_hex_color(default) or BLUE
 
 
 def discord_color_int(hex_color: str) -> int:
@@ -437,7 +433,7 @@ TRAY_ICON_CENTER = TRAY_ICON_SIZE // 2
 TRAY_RING_RADIUS = 23
 TRAY_DOT_RADIUS = 5
 TRAY_DOT_COUNT = 12
-TRAY_BLUE = QColor(70, 140, 255)
+TRAY_BLUE = QColor(BLUE)
 TRAY_YELLOW = QColor(255, 210, 0)
 TRAY_GREEN = QColor(0, 220, 120)
 
@@ -510,6 +506,7 @@ def save_config():
     global config
     config = normalize_config(config)
     BASE_DIR.mkdir(parents=True, exist_ok=True)
+    FILES_DIR.mkdir(parents=True, exist_ok=True)
     save_json(CONFIG_FILE, config)
     debug_log("config_saved", keys=sorted(config.keys()), debug_mode=config.get("debug_mode", False))
     signals.refresh_fields.emit()
@@ -582,45 +579,41 @@ def square_pixmap_from_file(path: Path, size: int = 256):
     return scaled.copy(x, y, size, size)
 
 
-def build_default_placeholder_pixmap(size: int = 256):
+_last_default_placeholder_status = None
+
+
+def build_solid_color_avatar_pixmap(size: int = 256, color: str = BLUE):
     pixmap = QPixmap(size, size)
-    pixmap.fill(QColor(BLUE))
+    pixmap.fill(QColor(color))
+    return pixmap
 
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.Antialiasing)
 
-    source = "fallback"
-    if QSvgRenderer is not None:
-        try:
-            response = requests.get(DEFAULT_PLACEHOLDER_IMAGE_URL, timeout=15)
-            if response.status_code == 200 and response.content:
-                renderer = QSvgRenderer(QByteArray(response.content))
-                if renderer.isValid():
-                    margin = max(26, int(size * 0.18))
-                    target = QRectF(margin, margin, size - margin * 2, size - margin * 2)
-                    view_box = renderer.viewBoxF()
-                    fitted = aspect_fit_rect(target, view_box.width() or 1.0, view_box.height() or 1.0)
-                    renderer.render(painter, fitted)
-                    source = "svg_url"
-        except Exception as exc:
-            debug_log("default_placeholder_svg_download_failed", error=str(exc), url=DEFAULT_PLACEHOLDER_IMAGE_URL)
+def pixmap_to_data_uri(pixmap: QPixmap | None):
+    try:
+        if pixmap is None or pixmap.isNull():
+            return None
+        byte_array = QByteArray()
+        buffer = QBuffer(byte_array)
+        if not buffer.open(QIODevice.WriteOnly):
+            return None
+        saved = pixmap.save(buffer, "PNG")
+        buffer.close()
+        if not saved:
+            return None
+        encoded = base64.b64encode(bytes(byte_array)).decode("ascii")
+        return f"data:image/png;base64,{encoded}"
+    except Exception as exc:
+        debug_log("pixmap_to_data_uri_failed", error=str(exc))
+        return None
 
-    if source == "fallback":
-        ring_pen = QPen(QColor("#ffffff"))
-        ring_pen.setWidth(max(10, size // 18))
-        painter.setPen(ring_pen)
-        painter.setBrush(Qt.NoBrush)
-        inset = max(36, int(size * 0.2))
-        painter.drawEllipse(inset, inset, size - inset * 2, size - inset * 2)
 
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor("#ffffff"))
-        dot = max(18, size // 11)
-        center = size // 2
-        painter.drawEllipse(center - dot // 2, center - dot // 2, dot, dot)
-
-    painter.end()
-    return pixmap, source
+def build_temporary_default_avatar_data_uri(size: int = 256):
+    payload = pixmap_to_data_uri(build_solid_color_avatar_pixmap(size=size, color=BLUE))
+    if payload:
+        debug_log("default_placeholder_temp_avatar_generated", size=size, color=BLUE)
+    else:
+        debug_log("default_placeholder_temp_avatar_failed", size=size, color=BLUE)
+    return payload
 
 
 def cleanup_legacy_profile_image():
@@ -633,26 +626,28 @@ def cleanup_legacy_profile_image():
 
 
 def ensure_default_profile_image(size: int = 256, force_refresh: bool = True):
+    global _last_default_placeholder_status
     try:
-        existing_valid = False
+        FILES_DIR.mkdir(parents=True, exist_ok=True)
+        usable = is_usable_image_file(DEFAULT_PLACEHOLDER_IMAGE_FILE)
+        state = "ready" if usable else "missing"
+        file_key = "missing"
         if DEFAULT_PLACEHOLDER_IMAGE_FILE.exists():
-            current = QPixmap(str(DEFAULT_PLACEHOLDER_IMAGE_FILE))
-            existing_valid = (not current.isNull() and current.width() == size and current.height() == size)
-            if existing_valid and not force_refresh:
-                debug_log("default_placeholder_image_ready", path=str(DEFAULT_PLACEHOLDER_IMAGE_FILE), reused=True)
-                return True
-
-        pixmap, source = build_default_placeholder_pixmap(size=size)
-        DEFAULT_PLACEHOLDER_IMAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        saved = pixmap.save(str(DEFAULT_PLACEHOLDER_IMAGE_FILE), "PNG")
-        if saved:
-            debug_log("default_placeholder_image_saved", path=str(DEFAULT_PLACEHOLDER_IMAGE_FILE), success=True, source=source, size=size)
-            return True
-        debug_log("default_placeholder_image_saved", path=str(DEFAULT_PLACEHOLDER_IMAGE_FILE), success=False, source=source, size=size)
-        return existing_valid
+            stat = DEFAULT_PLACEHOLDER_IMAGE_FILE.stat()
+            file_key = f"{stat.st_size}:{stat.st_mtime_ns}"
+        status_key = f"{state}:{file_key}"
+        if force_refresh or _last_default_placeholder_status != status_key:
+            debug_log(
+                "default_placeholder_local_file_status",
+                path=str(DEFAULT_PLACEHOLDER_IMAGE_FILE),
+                status=state,
+                source="local_file",
+            )
+            _last_default_placeholder_status = status_key
+        return usable
     except Exception as exc:
-        debug_log("default_placeholder_image_failed", error=str(exc), path=str(DEFAULT_PLACEHOLDER_IMAGE_FILE))
-        return DEFAULT_PLACEHOLDER_IMAGE_FILE.exists()
+        debug_log("default_placeholder_local_file_check_failed", error=str(exc), path=str(DEFAULT_PLACEHOLDER_IMAGE_FILE))
+        return False
 
 
 def save_custom_profile_image(source_path: str):
@@ -702,12 +697,23 @@ def is_usable_image_file(path: Path | None) -> bool:
         return False
 
 
-def get_effective_avatar_file() -> Path | None:
-    ensure_default_profile_image(force_refresh=False)
+def should_use_webhook_default_avatar() -> bool:
     avatar_mode = str(config.get("avatar_mode", AVATAR_MODE_AUTO) or AVATAR_MODE_AUTO).strip().lower()
-    if avatar_mode != AVATAR_MODE_DEFAULT and webhook_defaults_match_current() and is_usable_image_file(WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE):
+    return avatar_mode != AVATAR_MODE_DEFAULT and webhook_defaults_match_current() and is_usable_image_file(WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE)
+
+
+def should_use_local_default_avatar() -> bool:
+    return ensure_default_profile_image(force_refresh=False)
+
+
+def should_use_generated_default_avatar() -> bool:
+    return not should_use_webhook_default_avatar() and not should_use_local_default_avatar()
+
+
+def get_effective_avatar_file() -> Path | None:
+    if should_use_webhook_default_avatar():
         return WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE
-    if is_usable_image_file(DEFAULT_PLACEHOLDER_IMAGE_FILE):
+    if should_use_local_default_avatar():
         return DEFAULT_PLACEHOLDER_IMAGE_FILE
     return None
 
@@ -765,6 +771,8 @@ def get_avatar_sync_key() -> str:
     avatar_file = get_effective_avatar_file()
     if avatar_file is not None and avatar_file.exists():
         source = f"{avatar_file.name}:{avatar_file.stat().st_mtime_ns}"
+    elif should_use_generated_default_avatar():
+        source = f"avatar:generated:{BLUE}"
     else:
         source = "avatar:none"
     return f"{webhook_key}|{source}"
@@ -785,6 +793,9 @@ def sync_webhook_avatar(force: bool = False):
     if avatar_file is not None:
         avatar_payload = image_file_to_data_uri(avatar_file)
         source = avatar_file.name
+    elif should_use_generated_default_avatar():
+        avatar_payload = build_temporary_default_avatar_data_uri(size=256)
+        source = "generated-discord-blue"
     else:
         avatar_payload = None
         source = "none"
@@ -1872,7 +1883,7 @@ class EmbedColorPopup(QWidget):
         hex_col.addWidget(self.hex_label)
 
         self.hex_input = QLineEdit(self.selected_hex)
-        self.hex_input.setPlaceholderText('#F54927')
+        self.hex_input.setPlaceholderText(BLUE)
         self.hex_input.setMaxLength(7)
         self.hex_input.textChanged.connect(self.on_hex_text_changed)
         self.hex_input.editingFinished.connect(self.on_hex_editing_finished)
@@ -3068,7 +3079,7 @@ class MainWindow(QWidget):
                 padding: 7px 14px;
                 font: 700 9px 'Segoe UI';
             }}
-            QPushButton:hover {{ background: #69adff; }}
+            QPushButton:hover {{ background: {BLUE}; }}
             """
         )
         return btn
@@ -3098,7 +3109,7 @@ class MainWindow(QWidget):
             fg = text_color or "#ffffff"
             if hover is None:
                 if accent == BLUE:
-                    hover = "#69adff"
+                    hover = BLUE
                 elif accent == YELLOW:
                     hover = "#ffca52"
                 else:
@@ -3570,6 +3581,7 @@ def ensure_first_run(window: MainWindow):
 
 if __name__ == "__main__":
     BASE_DIR.mkdir(parents=True, exist_ok=True)
+    FILES_DIR.mkdir(parents=True, exist_ok=True)
     cleanup_legacy_profile_image()
     ensure_thumbs_dir()
     save_config()
