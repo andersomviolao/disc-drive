@@ -59,7 +59,7 @@ except Exception:
 
 APP_NAME = "Discord Webhook Uploader"
 APP_DIR_NAME = "discord-webhook-uploader"
-APP_VERSION = "3.0.12"
+APP_VERSION = "3.0.13"
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -2470,22 +2470,6 @@ class PostTemplatePage(PageBase):
 
         buttons.addStretch(1)
 
-        self.timer_label = QLabel("Timer")
-        self.timer_label.setStyleSheet(f"color:{TEXT}; font: 700 9px 'Segoe UI';")
-        buttons.addWidget(self.timer_label, 0, Qt.AlignVCenter)
-
-        self.timer_toggle = ToggleSwitch(get_timer_enabled())
-        self.timer_toggle.clicked.connect(self.on_timer_toggled)
-        buttons.addWidget(self.timer_toggle, 0, Qt.AlignVCenter)
-
-        self.timer_input = QLineEdit()
-        self.timer_input.setValidator(QIntValidator(1, 999999, self))
-        self.timer_input.setAlignment(Qt.AlignCenter)
-        self.timer_input.setFixedSize(42, 28)
-        self.timer_input.setStyleSheet(self.window.compact_input_style())
-        self.timer_input.editingFinished.connect(self.on_timer_input_finished)
-        buttons.addWidget(self.timer_input, 0, Qt.AlignVCenter)
-
         self.color_btn = ColorSwatchButton(config.get("embed_color", DEFAULT_EMBED_COLOR))
         self.color_btn.clicked.connect(self.toggle_embed_color_popup)
         buttons.addWidget(self.color_btn, 0, Qt.AlignVCenter)
@@ -2500,15 +2484,11 @@ class PostTemplatePage(PageBase):
 
         self.body.addLayout(buttons)
 
-    def current_delay_minutes(self) -> int:
-        text = (self.timer_input.text() or "").strip()
-        if text.isdigit():
-            return max(1, int(text))
-        return get_delay_minutes()
-
-    def update_timer_visibility(self):
-        visible = self.timer_toggle.isChecked()
-        self.timer_input.setVisible(visible)
+    def update_embed_controls_visibility(self):
+        use_embed = self.embed_toggle.isChecked()
+        self.color_btn.setVisible(use_embed)
+        if not use_embed and self.color_popup is not None and self.color_popup.isVisible():
+            self.color_popup.commit_and_close()
 
     def update_profile_preview(self):
         ensure_default_profile_image(force_refresh=False)
@@ -2529,11 +2509,9 @@ class PostTemplatePage(PageBase):
         self._loading = True
         self.editor.setPlainText(load_template())
         self.name_input.setText(get_custom_webhook_name())
-        self.timer_toggle.setChecked(get_timer_enabled())
-        self.timer_input.setText(str(get_delay_minutes()))
-        self.update_timer_visibility()
         self.update_profile_preview()
         self.embed_toggle.setChecked(bool(config.get("use_embed", False)))
+        self.update_embed_controls_visibility()
         self.color_btn.set_color(config.get("embed_color", DEFAULT_EMBED_COLOR))
         if self.color_popup is not None and self.color_popup.isVisible():
             self.color_popup.set_selected_hex(config.get("embed_color", DEFAULT_EMBED_COLOR), sync_hsv=True, sync_hex=True, emit_live=False)
@@ -2562,20 +2540,9 @@ class PostTemplatePage(PageBase):
         self.update_profile_preview()
         self.save_template(show_feedback=False)
 
-    def on_timer_toggled(self):
-        self.update_timer_visibility()
-        if self.timer_toggle.isChecked() and not self.timer_input.text().strip():
-            self.timer_input.setText(str(get_delay_minutes()))
-        self.save_template(show_feedback=False)
-
-    def on_timer_input_finished(self):
-        if self._loading:
-            return
-        self.timer_input.setText(str(self.current_delay_minutes()))
-        self.save_template(show_feedback=False)
-
     def toggle_embed(self):
         config["use_embed"] = self.embed_toggle.isChecked()
+        self.update_embed_controls_visibility()
         save_config()
 
     def ensure_color_popup(self):
@@ -2586,6 +2553,10 @@ class PostTemplatePage(PageBase):
         return self.color_popup
 
     def toggle_embed_color_popup(self):
+        if not self.embed_toggle.isChecked():
+            if self.color_popup is not None and self.color_popup.isVisible():
+                self.color_popup.commit_and_close()
+            return
         popup = self.ensure_color_popup()
         if popup.isVisible():
             popup.commit_and_close()
@@ -2646,9 +2617,7 @@ class PostTemplatePage(PageBase):
             self.color_popup.commit_and_close()
         config["post_template"] = normalize_multiline_text(self.editor.toPlainText(), default_template_text())
         config["webhook_custom_name"] = str(self.name_input.text() or "").strip()
-        config["timer_enabled"] = self.timer_toggle.isChecked()
-        config["delay_minutes"] = self.current_delay_minutes()
-        debug_log("save_post_page_state", timer_enabled=config["timer_enabled"], delay_minutes=config["delay_minutes"], webhook_custom_name=config["webhook_custom_name"])
+        debug_log("save_post_page_state", webhook_custom_name=config["webhook_custom_name"])
         save_config()
         if show_feedback:
             self.window.show_message("success", "Post settings saved.")
@@ -2728,13 +2697,33 @@ class SettingsPage(PageBase):
         self.delete_toggle.clicked.connect(self.toggle_delete_after_send)
         self.scroll_body.addWidget(SettingRow("Delete after send", "On: moves the file to the Recycle Bin. Off: keeps the file and avoids duplicates through the log.", self.delete_toggle))
 
+        timer_wrap = QWidget()
+        timer_wrap.setStyleSheet("background: transparent;")
+        timer_layout = QHBoxLayout(timer_wrap)
+        timer_layout.setContentsMargins(0, 0, 0, 0)
+        timer_layout.setSpacing(6)
+
+        self.timer_input = QLineEdit()
+        self.timer_input.setValidator(QIntValidator(1, 999999, self))
+        self.timer_input.setAlignment(Qt.AlignCenter)
+        self.timer_input.setFixedSize(42, 28)
+        self.timer_input.setStyleSheet(self.window.compact_input_style())
+        self.timer_input.editingFinished.connect(self.on_timer_input_finished)
+        timer_layout.addWidget(self.timer_input, 0, Qt.AlignVCenter)
+
+        self.timer_toggle = ToggleSwitch(get_timer_enabled())
+        self.timer_toggle.clicked.connect(self.toggle_timer)
+        timer_layout.addWidget(self.timer_toggle, 0, Qt.AlignVCenter)
+
+        self.scroll_body.addWidget(SettingRow("Post Timer", "Off: sends instantly. On: waits the configured number of minutes before sending new posts.", timer_wrap))
+
         post_wrap = QWidget()
         post_wrap.setStyleSheet("background: transparent;")
         post_layout = QHBoxLayout(post_wrap)
         post_layout.setContentsMargins(0, 0, 0, 0)
         self.post_btn = self.window.make_small_button("Edit Post", self.window.open_post_template_page)
         post_layout.addWidget(self.post_btn)
-        self.scroll_body.addWidget(SettingRow("Customize Post", "Opens a page to edit the post text, timer, webhook name, webhook image, and embed settings.", post_wrap))
+        self.scroll_body.addWidget(SettingRow("Customize Post", "Opens a page to edit the post text, webhook name, webhook image, and embed settings.", post_wrap))
 
         clear_wrap = QWidget()
         clear_wrap.setStyleSheet("background: transparent;")
@@ -2763,8 +2752,21 @@ class SettingsPage(PageBase):
     def refresh(self):
         self.start_toggle.setChecked(config.get("start_with_windows", False))
         self.delete_toggle.setChecked(config.get("delete_after_send", True))
+        self.timer_toggle.setChecked(get_timer_enabled())
+        self.timer_input.setText(str(get_delay_minutes()))
+        self.update_timer_visibility()
         self.debug_toggle.setChecked(config.get("debug_mode", False))
         self.version_value.setText(APP_VERSION)
+
+    def current_delay_minutes(self) -> int:
+        text = (self.timer_input.text() or "").strip()
+        if text.isdigit():
+            return max(1, int(text))
+        return get_delay_minutes()
+
+    def update_timer_visibility(self):
+        visible = self.timer_toggle.isChecked()
+        self.timer_input.setVisible(visible)
 
     def toggle_startup(self):
         enabled = self.start_toggle.isChecked()
@@ -2783,6 +2785,23 @@ class SettingsPage(PageBase):
         debug_log("toggle_delete_after_send", enabled=config["delete_after_send"])
         save_config()
         self.window.show_message("success", "Delete option updated.")
+
+    def toggle_timer(self):
+        self.update_timer_visibility()
+        if self.timer_toggle.isChecked() and not self.timer_input.text().strip():
+            self.timer_input.setText(str(get_delay_minutes()))
+        config["timer_enabled"] = self.timer_toggle.isChecked()
+        config["delay_minutes"] = self.current_delay_minutes()
+        debug_log("toggle_post_timer", enabled=config["timer_enabled"], delay_minutes=config["delay_minutes"])
+        save_config()
+        self.window.show_message("success", "Post timer updated.")
+
+    def on_timer_input_finished(self):
+        self.timer_input.setText(str(self.current_delay_minutes()))
+        config["delay_minutes"] = self.current_delay_minutes()
+        debug_log("post_timer_minutes_changed", delay_minutes=config["delay_minutes"])
+        save_config()
+        self.window.show_message("success", "Post timer updated.")
 
     def clear_log(self):
         debug_log("clear_log_requested")
