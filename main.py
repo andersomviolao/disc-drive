@@ -55,7 +55,7 @@ except Exception:
 
 APP_NAME = "disc-drive"
 APP_DIR_NAME = "disc-drive"
-APP_VERSION = "3.0.22"
+APP_VERSION = "3.0.23"
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -78,7 +78,7 @@ BASE_DIR = Path(os.getenv("LOCALAPPDATA", str(Path.home()))) / APP_DIR_NAME
 CONFIG_FILE = BASE_DIR / "config.json"
 LOG_FILE = BASE_DIR / "sent_log.json"
 DEBUG_FILE = BASE_DIR / "debug.json"
-FILES_DIR = BASE_DIR / "files"
+FILES_DIR = RUNTIME_DIR / "files"
 DEFAULT_PLACEHOLDER_IMAGE_FILE = FILES_DIR / "default-img.png"
 WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE = BASE_DIR / "webhook-default-avatar.png"
 LEGACY_PROFILE_IMAGE_FILE = BASE_DIR / "profile-img.png"
