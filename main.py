@@ -59,7 +59,7 @@ except Exception:
 
 APP_NAME = "disc-drive"
 APP_DIR_NAME = "disc-drive"
-APP_VERSION = "3.0.14"
+APP_VERSION = "3.0.15"
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -334,6 +334,13 @@ def get_post_interval_seconds() -> int:
 
 def get_custom_webhook_name() -> str:
     return str(config.get("webhook_custom_name", "") or "").strip()
+
+
+def get_effective_webhook_name(override_name: str | None = None) -> str:
+    if override_name is not None:
+        name = str(override_name or "").strip()
+        return name or APP_NAME
+    return get_custom_webhook_name() or APP_NAME
 
 
 def parse_hex_color(value: str):
@@ -673,6 +680,27 @@ def image_file_to_data_uri(path: Path):
         return None
 
 
+def is_usable_image_file(path: Path | None) -> bool:
+    try:
+        if path is None or not Path(path).exists():
+            return False
+        pixmap = QPixmap(str(path))
+        return not pixmap.isNull()
+    except Exception:
+        return False
+
+
+def get_effective_avatar_file() -> Path | None:
+    ensure_default_profile_image(force_refresh=False)
+    if is_usable_image_file(CUSTOM_PROFILE_IMAGE_FILE):
+        return CUSTOM_PROFILE_IMAGE_FILE
+    if webhook_defaults_match_current() and is_usable_image_file(WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE):
+        return WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE
+    if is_usable_image_file(DEFAULT_PLACEHOLDER_IMAGE_FILE):
+        return DEFAULT_PLACEHOLDER_IMAGE_FILE
+    return None
+
+
 def capture_webhook_defaults(webhook_url: str | None = None):
     webhook_url = (webhook_url or config.get("webhook", "") or "").strip()
     if not webhook_url:
@@ -714,12 +742,11 @@ def get_avatar_sync_key() -> str:
     webhook_key = current_webhook_identity_key()
     if not webhook_key:
         return ""
-    if CUSTOM_PROFILE_IMAGE_FILE.exists():
-        source = f"custom:{CUSTOM_PROFILE_IMAGE_FILE.stat().st_mtime_ns}"
-    elif webhook_defaults_match_current() and WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE.exists():
-        source = f"default:{WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE.stat().st_mtime_ns}"
+    avatar_file = get_effective_avatar_file()
+    if avatar_file is not None and avatar_file.exists():
+        source = f"{avatar_file.name}:{avatar_file.stat().st_mtime_ns}"
     else:
-        source = "default:none"
+        source = "avatar:none"
     return f"{webhook_key}|{source}"
 
 
@@ -733,15 +760,15 @@ def sync_webhook_avatar(force: bool = False):
     sync_key = get_avatar_sync_key()
     if sync_key and not force and _last_avatar_sync_key == sync_key:
         return True
-    if CUSTOM_PROFILE_IMAGE_FILE.exists():
-        avatar_payload = image_file_to_data_uri(CUSTOM_PROFILE_IMAGE_FILE)
-        source = "custom"
-    elif webhook_defaults_match_current() and WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE.exists():
-        avatar_payload = image_file_to_data_uri(WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE)
-        source = "default"
+
+    avatar_file = get_effective_avatar_file()
+    if avatar_file is not None:
+        avatar_payload = image_file_to_data_uri(avatar_file)
+        source = avatar_file.name
     else:
         avatar_payload = None
         source = "none"
+
     try:
         response = requests.patch(webhook_url, json={"avatar": avatar_payload}, timeout=15)
         if response.status_code in (200, 204):
@@ -1229,7 +1256,7 @@ def send_test_message(template_text: str | None = None, use_embed: bool | None =
     message = build_test_message(template_text)
     use_embed = bool(config.get("use_embed", False)) if use_embed is None else bool(use_embed)
     embed_color = normalize_hex_color(config.get("embed_color", DEFAULT_EMBED_COLOR))
-    display_name = get_custom_webhook_name() if webhook_name is None else str(webhook_name or "").strip()
+    display_name = get_effective_webhook_name(webhook_name)
     payload = build_message_payload(message, use_embed, embed_color, username=display_name or None)
 
     try:
@@ -1318,7 +1345,7 @@ def send_file(path):
         message = render_template_text(template, filename, creation_str, upload_str)
         use_embed = bool(config.get("use_embed", False))
         embed_color = normalize_hex_color(config.get("embed_color", DEFAULT_EMBED_COLOR))
-        display_name = get_custom_webhook_name()
+        display_name = get_effective_webhook_name()
 
         for attempt in range(4):
             try:
@@ -2491,19 +2518,12 @@ class PostTemplatePage(PageBase):
             self.color_popup.commit_and_close()
 
     def update_profile_preview(self):
-        ensure_default_profile_image(force_refresh=False)
-        if CUSTOM_PROFILE_IMAGE_FILE.exists():
-            image_path = str(CUSTOM_PROFILE_IMAGE_FILE)
-        elif DEFAULT_PLACEHOLDER_IMAGE_FILE.exists():
-            image_path = str(DEFAULT_PLACEHOLDER_IMAGE_FILE)
-        else:
-            image_path = None
-        self.avatar_preview.set_image_path(image_path)
-        has_custom_state = CUSTOM_PROFILE_IMAGE_FILE.exists() or bool((self.name_input.text() or "").strip()) or bool(get_custom_webhook_name())
+        avatar_file = get_effective_avatar_file()
+        self.avatar_preview.set_image_path(str(avatar_file) if avatar_file is not None else None)
+        has_custom_state = is_usable_image_file(CUSTOM_PROFILE_IMAGE_FILE) or bool((self.name_input.text() or "").strip()) or bool(get_custom_webhook_name())
         self.clear_profile_btn.setEnabled(has_custom_state)
         self.clear_profile_btn.setStyleSheet(self.window.small_button_style(enabled=has_custom_state, accent=BLUE))
-        default_name = (config.get("webhook_default_name", "") or "").strip() or APP_NAME
-        self.name_input.setPlaceholderText(default_name)
+        self.name_input.setPlaceholderText(APP_NAME)
 
     def refresh(self):
         self._loading = True
