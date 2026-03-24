@@ -59,7 +59,7 @@ except Exception:
 
 APP_NAME = "disc-drive"
 APP_DIR_NAME = "disc-drive"
-APP_VERSION = "3.0.17"
+APP_VERSION = "3.0.18"
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -1460,11 +1460,9 @@ def monitoring_loop():
     global monitoring
     debug_log("monitoring_loop_started")
     while not stop_event.is_set():
-        debug_log("monitoring_loop_tick", monitoring=monitoring, folder=config.get("folder", ""), webhook_configured=bool(config.get("webhook")))
         if monitoring and config.get("folder") and config.get("webhook"):
             folder = config.get("folder", "")
             if os.path.isdir(folder) and send_lock.acquire(blocking=False):
-                debug_log("monitoring_lock_acquired", folder=folder)
                 try:
                     now = time.time()
                     files = [
@@ -1473,7 +1471,8 @@ def monitoring_loop():
                         if os.path.isfile(os.path.join(folder, f))
                     ]
                     ready = [p for p in files if now - os.path.getctime(p) >= get_wait_time_seconds()]
-                    debug_log("monitoring_folder_scanned", folder=folder, file_count=len(files), ready_count=len(ready))
+                    if files or ready:
+                        debug_log("monitoring_folder_scanned", folder=folder, file_count=len(files), ready_count=len(ready))
                     for file in sorted(ready, key=os.path.getctime):
                         if stop_event.is_set() or not monitoring:
                             break
@@ -1488,9 +1487,7 @@ def monitoring_loop():
                     debug_log("monitoring_loop_exception", error=str(exc))
                 finally:
                     send_lock.release()
-                    debug_log("monitoring_lock_released", folder=folder)
-        for second in range(MONITOR_CHECK_INTERVAL):
-            debug_log("monitoring_sleep_tick", second=second + 1, interval=MONITOR_CHECK_INTERVAL)
+        for _ in range(MONITOR_CHECK_INTERVAL):
             if stop_event.is_set():
                 break
             time.sleep(1)
@@ -3441,18 +3438,20 @@ class TrayController(QObject):
         self.window.show_near_tray()
 
     def refresh_tray_icon(self, force=False):
-        debug_log("refresh_tray_icon", force=force, sending=sending_event.is_set(), monitoring=monitoring)
         sending = sending_event.is_set()
         active = monitoring
 
         if sending:
+            if self._last_static_state != "sending":
+                debug_log("tray_icon_state_changed", state="sending", monitoring=active)
             self.rotation += 0.35
             self.tray.setIcon(create_tray_icon(active, sending=True, rotation=self.rotation))
-            self._last_static_state = None
+            self._last_static_state = "sending"
             return
 
         state_key = "normal" if active else "paused"
         if force or self._last_static_state != state_key:
+            debug_log("tray_icon_state_changed", state=state_key, monitoring=active, forced=force)
             self.tray.setIcon(create_tray_icon(active, sending=False))
             self._last_static_state = state_key
 
