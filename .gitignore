@@ -34,7 +34,3 @@ temp/
 *.tmp
 *.bak
 *.orig
-
-# Local app runtime/config files
-cfg.json
-log.json
