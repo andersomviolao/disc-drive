@@ -59,7 +59,7 @@ except Exception:
 
 APP_NAME = "disc-drive"
 APP_DIR_NAME = "disc-drive"
-APP_VERSION = "3.0.16"
+APP_VERSION = "3.0.17"
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -3471,11 +3471,12 @@ class TrayController(QObject):
             self.focus_loss_timer.stop()
 
     def on_application_state_changed(self, state):
-        debug_log("application_state_changed", state=int(state), is_dragging=self.window.is_dragging)
+        debug_log("application_state_changed", state=_debug_enum_value(state), is_dragging=self.window.is_dragging)
         if self.window.is_dragging:
             self.focus_loss_timer.stop()
             return
-        if state == Qt.ApplicationActive:
+        active_state = getattr(Qt.ApplicationState, "ApplicationActive", Qt.ApplicationActive)
+        if state == active_state:
             self.focus_loss_timer.stop()
         else:
             self.focus_loss_timer.start()
