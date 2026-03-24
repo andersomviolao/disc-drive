@@ -59,7 +59,7 @@ except Exception:
 
 APP_NAME = "disc-drive"
 APP_DIR_NAME = "disc-drive"
-APP_VERSION = "3.0.20"
+APP_VERSION = "3.0.21"
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -2730,13 +2730,29 @@ class SettingsPage(PageBase):
         self.scroll.setWidget(self.scroll_host)
         self.body.addWidget(self.scroll, 1)
 
+        self.delete_toggle = ToggleSwitch(config.get("delete_after_send", True))
+        self.delete_toggle.clicked.connect(self.toggle_delete_after_send)
+        self.scroll_body.addWidget(SettingRow("Delete after send", "On: moves the file to the Recycle Bin. Off: keeps the file and avoids duplicates through the log.", self.delete_toggle))
+
+        clear_wrap = QWidget()
+        clear_wrap.setStyleSheet("background: transparent;")
+        clear_layout = QHBoxLayout(clear_wrap)
+        clear_layout.setContentsMargins(0, 0, 0, 0)
+        self.clear_log_btn = self.window.make_small_button("Clear Log", self.clear_log, accent=YELLOW)
+        clear_layout.addWidget(self.clear_log_btn)
+        self.scroll_body.addWidget(SettingRow("Clear Log", "Deletes the history of already sent files and allows them to be sent again.", clear_wrap))
+
         self.start_toggle = ToggleSwitch(config.get("start_with_windows", False))
         self.start_toggle.clicked.connect(self.toggle_startup)
         self.scroll_body.addWidget(SettingRow("Start with Windows", "Starts hidden in the system tray when Windows launches.", self.start_toggle))
 
-        self.delete_toggle = ToggleSwitch(config.get("delete_after_send", True))
-        self.delete_toggle.clicked.connect(self.toggle_delete_after_send)
-        self.scroll_body.addWidget(SettingRow("Delete after send", "On: moves the file to the Recycle Bin. Off: keeps the file and avoids duplicates through the log.", self.delete_toggle))
+        post_wrap = QWidget()
+        post_wrap.setStyleSheet("background: transparent;")
+        post_layout = QHBoxLayout(post_wrap)
+        post_layout.setContentsMargins(0, 0, 0, 0)
+        self.post_btn = self.window.make_small_button("Edit Post", self.window.open_post_template_page)
+        post_layout.addWidget(self.post_btn)
+        self.scroll_body.addWidget(SettingRow("Customize Post", "Opens a page to edit the post text, webhook name, webhook image, and embed settings.", post_wrap))
 
         timer_wrap = QWidget()
         timer_wrap.setStyleSheet("background: transparent;")
@@ -2758,22 +2774,6 @@ class SettingsPage(PageBase):
 
         self.scroll_body.addWidget(SettingRow("Post Timer", "Off: sends instantly. On: waits the configured number of minutes before sending new posts.", timer_wrap))
 
-        post_wrap = QWidget()
-        post_wrap.setStyleSheet("background: transparent;")
-        post_layout = QHBoxLayout(post_wrap)
-        post_layout.setContentsMargins(0, 0, 0, 0)
-        self.post_btn = self.window.make_small_button("Edit Post", self.window.open_post_template_page)
-        post_layout.addWidget(self.post_btn)
-        self.scroll_body.addWidget(SettingRow("Customize Post", "Opens a page to edit the post text, webhook name, webhook image, and embed settings.", post_wrap))
-
-        clear_wrap = QWidget()
-        clear_wrap.setStyleSheet("background: transparent;")
-        clear_layout = QHBoxLayout(clear_wrap)
-        clear_layout.setContentsMargins(0, 0, 0, 0)
-        self.clear_log_btn = self.window.make_small_button("Clear Log", self.clear_log, accent=YELLOW)
-        clear_layout.addWidget(self.clear_log_btn)
-        self.scroll_body.addWidget(SettingRow("Clear Log", "Deletes the history of already sent files and allows them to be sent again.", clear_wrap))
-
         open_wrap = QWidget()
         open_wrap.setStyleSheet("background: transparent;")
         open_layout = QHBoxLayout(open_wrap)
@@ -2782,12 +2782,12 @@ class SettingsPage(PageBase):
         open_layout.addWidget(self.open_cfg_btn)
         self.scroll_body.addWidget(SettingRow("Configuration Folder", str(BASE_DIR), open_wrap))
 
-        self.version_value = self.window.make_info_value()
-        self.scroll_body.addWidget(SettingRow("App Version", "Current version in use.", self.version_value))
-
         self.debug_toggle = ToggleSwitch(config.get("debug_mode", False))
         self.debug_toggle.clicked.connect(self.toggle_debug_mode)
         self.scroll_body.addWidget(SettingRow("Debug Mode", "Prints debug logs in the console and writes debug.json while active.", self.debug_toggle))
+
+        self.version_value = self.window.make_info_value()
+        self.scroll_body.addWidget(SettingRow("App Version", "Current version in use.", self.version_value))
         self.scroll_body.addStretch(1)
 
     def refresh(self):
