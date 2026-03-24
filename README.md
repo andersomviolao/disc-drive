@@ -1,4 +1,4 @@
-# Discord Webhook Uploader
+# disc-drive
 
 A lightweight desktop app for automatically uploading images and videos from a local folder to a Discord webhook.
 
@@ -40,7 +40,7 @@ This `files` folder must stay next to the main script or executable.
 Example:
 
 ```text
-Discord Webhook Uploader/
+disc-drive/
 ├─ main.py
 ├─ files/
 │  └─ default-img.png
@@ -135,7 +135,7 @@ The app now stays quiet during normal operation, showing only standard Python er
 ## Recommended folder layout
 
 ```text
-Discord Webhook Uploader/
+disc-drive/
 ├─ main.py
 ├─ files/
 │  └─ default-img.png
