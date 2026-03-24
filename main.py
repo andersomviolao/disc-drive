@@ -59,7 +59,7 @@ except Exception:
 
 APP_NAME = "disc-drive"
 APP_DIR_NAME = "disc-drive"
-APP_VERSION = "3.0.15"
+APP_VERSION = "3.0.16"
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -82,10 +82,12 @@ BASE_DIR = Path(os.getenv("LOCALAPPDATA", str(Path.home()))) / APP_DIR_NAME
 CONFIG_FILE = BASE_DIR / "config.json"
 LOG_FILE = BASE_DIR / "sent_log.json"
 DEBUG_FILE = BASE_DIR / "debug.json"
-CUSTOM_PROFILE_IMAGE_FILE = BASE_DIR / "profile-img.png"
 DEFAULT_PLACEHOLDER_IMAGE_FILE = BASE_DIR / "default-img.png"
 DEFAULT_PLACEHOLDER_IMAGE_URL = "https://cdn.prod.website-files.com/6257adef93867e50d84d30e2/66e278299a53f5bf88615e90_Symbol.svg"
 WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE = BASE_DIR / "webhook-default-avatar.png"
+LEGACY_PROFILE_IMAGE_FILE = BASE_DIR / "profile-img.png"
+AVATAR_MODE_AUTO = "auto"
+AVATAR_MODE_DEFAULT = "default"
 THUMBS_DIR = BASE_DIR / "thumbs-log"
 THUMB_MAX_DIMENSION = 64
 THUMB_HOME_VISIBLE_COUNT = 7
@@ -393,6 +395,7 @@ def normalize_config(raw):
         "webhook_custom_name": str(raw.get("webhook_custom_name", "") or "").strip(),
         "webhook_default_name": str(raw.get("webhook_default_name", "") or "").strip(),
         "webhook_default_source": str(raw.get("webhook_default_source", "") or "").strip(),
+        "avatar_mode": str(raw.get("avatar_mode", AVATAR_MODE_AUTO) or AVATAR_MODE_AUTO).strip().lower() if str(raw.get("avatar_mode", AVATAR_MODE_AUTO) or AVATAR_MODE_AUTO).strip().lower() in {AVATAR_MODE_AUTO, AVATAR_MODE_DEFAULT} else AVATAR_MODE_AUTO,
         "monitoring_enabled": bool(raw.get("monitoring_enabled", True)),
         "window_x": normalize_int(raw.get("window_x", -1), -1, minimum=-1),
         "window_y": normalize_int(raw.get("window_y", -1), -1, minimum=-1),
@@ -411,6 +414,7 @@ class UISignals(QObject):
     toast = Signal(str, str)
     refresh_fields = Signal()
     thumbnail_changed = Signal(str, bool)
+    managed_window_deactivated = Signal()
 
 
 signals = UISignals()
@@ -618,6 +622,15 @@ def build_default_placeholder_pixmap(size: int = 256):
     return pixmap, source
 
 
+def cleanup_legacy_profile_image():
+    try:
+        if LEGACY_PROFILE_IMAGE_FILE.exists():
+            LEGACY_PROFILE_IMAGE_FILE.unlink()
+            debug_log("legacy_profile_image_removed", path=str(LEGACY_PROFILE_IMAGE_FILE))
+    except Exception as exc:
+        debug_log("legacy_profile_image_remove_failed", path=str(LEGACY_PROFILE_IMAGE_FILE), error=str(exc))
+
+
 def ensure_default_profile_image(size: int = 256, force_refresh: bool = True):
     try:
         existing_valid = False
@@ -643,28 +656,26 @@ def ensure_default_profile_image(size: int = 256, force_refresh: bool = True):
 
 def save_custom_profile_image(source_path: str):
     source = Path(source_path)
+    cleanup_legacy_profile_image()
     cropped = square_pixmap_from_file(source, size=256)
     if cropped is None:
         return False, "Could not open the selected image."
-    CUSTOM_PROFILE_IMAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    if not cropped.save(str(CUSTOM_PROFILE_IMAGE_FILE), "PNG"):
+    WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    if not cropped.save(str(WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE), "PNG"):
         return False, "Could not save the profile image."
+    config["avatar_mode"] = AVATAR_MODE_AUTO
     reset_avatar_sync_cache()
-    debug_log("custom_profile_image_saved", source=str(source), target=str(CUSTOM_PROFILE_IMAGE_FILE))
-    return True, str(CUSTOM_PROFILE_IMAGE_FILE)
+    save_config()
+    debug_log("custom_profile_image_saved", source=str(source), target=str(WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE))
+    return True, str(WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE)
 
 
 def remove_custom_profile_image():
-    removed = False
-    try:
-        if CUSTOM_PROFILE_IMAGE_FILE.exists():
-            CUSTOM_PROFILE_IMAGE_FILE.unlink()
-            removed = True
-    except Exception as exc:
-        debug_log("remove_custom_profile_image_failed", error=str(exc))
-        return False
+    cleanup_legacy_profile_image()
+    config["avatar_mode"] = AVATAR_MODE_DEFAULT
     reset_avatar_sync_cache()
-    debug_log("custom_profile_image_removed", removed=removed)
+    save_config()
+    debug_log("custom_profile_image_removed", removed=True, mode=config.get("avatar_mode", AVATAR_MODE_AUTO))
     return True
 
 
@@ -692,9 +703,8 @@ def is_usable_image_file(path: Path | None) -> bool:
 
 def get_effective_avatar_file() -> Path | None:
     ensure_default_profile_image(force_refresh=False)
-    if is_usable_image_file(CUSTOM_PROFILE_IMAGE_FILE):
-        return CUSTOM_PROFILE_IMAGE_FILE
-    if webhook_defaults_match_current() and is_usable_image_file(WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE):
+    avatar_mode = str(config.get("avatar_mode", AVATAR_MODE_AUTO) or AVATAR_MODE_AUTO).strip().lower()
+    if avatar_mode != AVATAR_MODE_DEFAULT and webhook_defaults_match_current() and is_usable_image_file(WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE):
         return WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE
     if is_usable_image_file(DEFAULT_PLACEHOLDER_IMAGE_FILE):
         return DEFAULT_PLACEHOLDER_IMAGE_FILE
@@ -709,8 +719,12 @@ def capture_webhook_defaults(webhook_url: str | None = None):
     try:
         response = requests.get(webhook_url, timeout=12)
         if response.status_code != 200:
+            config["webhook_default_source"] = identity_key
+            config["avatar_mode"] = AVATAR_MODE_AUTO
+            save_config()
             debug_log("capture_webhook_defaults_failed", status_code=response.status_code)
             return False
+        cleanup_legacy_profile_image()
         data = response.json() if response.content else {}
         config["webhook_default_name"] = str(data.get("name") or "").strip()
         avatar_hash = data.get("avatar")
@@ -730,10 +744,15 @@ def capture_webhook_defaults(webhook_url: str | None = None):
                 WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE.unlink()
             debug_log("capture_webhook_defaults_avatar_none")
         config["webhook_default_source"] = identity_key
+        config["avatar_mode"] = AVATAR_MODE_AUTO
+        reset_avatar_sync_cache()
         save_config()
-        debug_log("capture_webhook_defaults_finished", webhook_default_name=config.get("webhook_default_name", ""))
+        debug_log("capture_webhook_defaults_finished", webhook_default_name=config.get("webhook_default_name", ""), avatar_mode=config.get("avatar_mode", AVATAR_MODE_AUTO))
         return True
     except Exception as exc:
+        config["webhook_default_source"] = identity_key
+        config["avatar_mode"] = AVATAR_MODE_AUTO
+        save_config()
         debug_log("capture_webhook_defaults_exception", error=str(exc))
         return False
 
@@ -2303,10 +2322,6 @@ class HomePage(PageBase):
         self.send_now_btn.setFixedSize(102, 30)
         bottom.addWidget(self.send_now_btn)
 
-        self.close_btn = self.window.make_secondary_button("Hide", self.window.hide_to_tray)
-        self.close_btn.setFixedSize(102, 30)
-        bottom.addWidget(self.close_btn)
-
         self.body.addLayout(bottom)
 
     def refresh(self):
@@ -2373,8 +2388,7 @@ class WebhookPage(PageBase):
         reset_avatar_sync_cache()
         save_config()
         capture_webhook_defaults(text)
-        if CUSTOM_PROFILE_IMAGE_FILE.exists():
-            sync_webhook_avatar(force=True)
+        sync_webhook_avatar(force=True)
         self.window.show_message("success", "Webhook updated.")
         self.window.go_home()
 
@@ -2520,7 +2534,15 @@ class PostTemplatePage(PageBase):
     def update_profile_preview(self):
         avatar_file = get_effective_avatar_file()
         self.avatar_preview.set_image_path(str(avatar_file) if avatar_file is not None else None)
-        has_custom_state = is_usable_image_file(CUSTOM_PROFILE_IMAGE_FILE) or bool((self.name_input.text() or "").strip()) or bool(get_custom_webhook_name())
+        current_avatar_is_default = False
+        if avatar_file is not None:
+            try:
+                current_avatar_is_default = Path(avatar_file).resolve() == DEFAULT_PLACEHOLDER_IMAGE_FILE.resolve()
+            except Exception:
+                current_avatar_is_default = str(avatar_file) == str(DEFAULT_PLACEHOLDER_IMAGE_FILE)
+        has_custom_name = bool((self.name_input.text() or "").strip()) or bool(get_custom_webhook_name())
+        has_non_default_avatar = avatar_file is not None and not current_avatar_is_default
+        has_custom_state = has_non_default_avatar or has_custom_name
         self.clear_profile_btn.setEnabled(has_custom_state)
         self.clear_profile_btn.setStyleSheet(self.window.small_button_style(enabled=has_custom_state, accent=BLUE))
         self.name_input.setPlaceholderText(APP_NAME)
@@ -2614,7 +2636,8 @@ class PostTemplatePage(PageBase):
         self.window.show_message("success", "Webhook image updated.")
 
     def remove_profile_image(self):
-        had_custom_image = CUSTOM_PROFILE_IMAGE_FILE.exists()
+        avatar_file = get_effective_avatar_file()
+        had_custom_image = avatar_file is not None and str(avatar_file) != str(DEFAULT_PLACEHOLDER_IMAGE_FILE)
         had_custom_name = bool((self.name_input.text() or "").strip()) or bool(get_custom_webhook_name())
         if not had_custom_image and not had_custom_name:
             return
@@ -3302,6 +3325,8 @@ class MainWindow(QWidget):
         super().changeEvent(event)
         if event.type() == event.Type.WindowStateChange and self.windowState() != Qt.WindowNoState:
             self.ensure_expected_geometry()
+        if event.type() == event.Type.ActivationChange and not self.isActiveWindow() and self.isVisible():
+            signals.managed_window_deactivated.emit()
 
     def showEvent(self, event):
         debug_log("main_window_show_event")
@@ -3389,6 +3414,8 @@ class TrayController(QObject):
         self.focus_loss_timer.setInterval(120)
         self.focus_loss_timer.timeout.connect(self.handle_focus_loss)
         self.app.focusChanged.connect(self.on_focus_changed)
+        self.app.applicationStateChanged.connect(self.on_application_state_changed)
+        signals.managed_window_deactivated.connect(self.on_managed_window_deactivated)
 
         self.tray_timer = QTimer(self)
         self.tray_timer.setInterval(80)
@@ -3442,6 +3469,23 @@ class TrayController(QObject):
             self.focus_loss_timer.start()
         else:
             self.focus_loss_timer.stop()
+
+    def on_application_state_changed(self, state):
+        debug_log("application_state_changed", state=int(state), is_dragging=self.window.is_dragging)
+        if self.window.is_dragging:
+            self.focus_loss_timer.stop()
+            return
+        if state == Qt.ApplicationActive:
+            self.focus_loss_timer.stop()
+        else:
+            self.focus_loss_timer.start()
+
+    def on_managed_window_deactivated(self):
+        debug_log("managed_window_deactivated", is_dragging=self.window.is_dragging)
+        if self.window.is_dragging:
+            self.focus_loss_timer.stop()
+            return
+        self.focus_loss_timer.start()
 
     def iter_managed_windows(self):
         managed = [self.window, self.exit_bubble]
@@ -3514,6 +3558,7 @@ def ensure_first_run(window: MainWindow):
 
 if __name__ == "__main__":
     BASE_DIR.mkdir(parents=True, exist_ok=True)
+    cleanup_legacy_profile_image()
     ensure_thumbs_dir()
     save_config()
     init_debug_session()
