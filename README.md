@@ -1,138 +1,149 @@
-# disc-drive
+# Discord Webhook Uploader
 
-Simple monitoring, polished visuals, and everything inside the same interface.
+A lightweight desktop app for automatically uploading images and videos from a local folder to a Discord webhook.
 
-## Overview
+The app was built for a simple workflow: monitor a folder, queue valid files, and send them to Discord with optional custom post text, embed mode, thumbnails, tray behavior, and basic automation controls.
 
-**disc-drive** is a Windows desktop app built with **Python** and **PySide6**.
-It watches a folder, sends supported files to a **Discord webhook**, and keeps the workflow inside a compact single-window interface.
+## Current status
 
-The current version is **v3.0.21**.
+This README reflects the current behavior up to version **3.0.24**.
 
 ## Main features
 
-- Watch a local folder and send new files to a Discord webhook
-- Support for image and video files
-- Send files in creation-time order on Windows
-- Optional delay timer before sending new files
-- Optional interval between posts
-- Optional **Delete after send** behavior using the Recycle Bin
-- Manual **Send Now** action
-- Editable custom post template
-- Template variables for file name and timestamps
-- Optional embed mode with color picker
-- Custom webhook display name
-- Custom webhook profile image
-- History area with thumbnails of recently sent files
-- Video thumbnail generation through local FFmpeg
-- Start with Windows
-- Debug mode with console output and `debug.json`
-- Open local configuration folder directly from the app
-- Clear send history log from the settings page
+- Monitor a local folder for new files
+- Upload supported media files to a Discord webhook
+- Keep files ordered by real creation date when possible
+- Optional delayed posting with a configurable timer
+- Optional instant sending mode
+- Tray integration with running / paused / sending states
+- Settings page inside the main window
+- Custom post text editor inside the app
+- Optional embed mode for webhook posts
+- Default embed color set to **Discord Blue** (`#5865F2`)
+- Custom webhook bot name support
+- Custom webhook bot image support
+- Webhook avatar auto-fetch and refresh
+- Local fallback default image support
+- Animated / static thumbnail handling for recent files
+- Optional delete-after-send behavior
+- Start with Windows option
+- Clear sent log option
 
-## Supported file types
+## Default image behavior
 
-### Images
+The application now expects the default image at:
 
-- `.png`
-- `.jpg`
-- `.jpeg`
-- `.gif`
-- `.webp`
-- `.bmp`
+`files/default-img.png`
 
-### Videos
+This `files` folder must stay next to the main script or executable.
 
-- `.mp4`
-- `.mov`
-- `.m4v`
-- `.avi`
-- `.mkv`
-- `.webm`
-- `.wmv`
-- `.mpeg`
-- `.mpg`
-- `.m2ts`
-- `.ts`
+Example:
+
+```text
+Discord Webhook Uploader/
+├─ main.py
+├─ files/
+│  └─ default-img.png
+```
+
+### Avatar priority
+
+The app uses avatar images in this order:
+
+1. Webhook avatar
+2. Local `files/default-img.png`
+3. Generated temporary solid Discord Blue avatar
+
+### If `default-img.png` is missing
+
+- The interface shows a solid **Discord Blue** block
+- Webhook sending uses a generated temporary blue avatar
+
+## Visual defaults
+
+The main accent color is now **Discord Blue**:
+
+`#5865F2`
+
+The default embed color is also:
+
+`#5865F2`
 
 ## Requirements
 
-- Windows 10 or Windows 11
-- Python 3.11+
-- A valid Discord webhook URL
+Typical dependencies may include:
 
-## Python dependencies
+- Python 3
+- PySide6
+- requests
+- Pillow
+- send2trash
 
-Install the required packages with:
-
-```bash
-pip install PySide6 requests send2trash
-```
+Depending on your build, additional packages may be required.
 
 ## FFmpeg
 
-Video thumbnails use a local FFmpeg binary.
-The expected path is:
+For better thumbnail support, keep FFmpeg here:
 
 ```text
-ffmpeg\bin\ffmpeg.exe
+ffmpeg/bin/ffmpeg.exe
 ```
 
-Place the `ffmpeg` folder next to the script or executable.
+This folder should stay next to the main script.
 
-## How to run
+## Configuration behavior
 
-```bash
-python main.py
-```
+The app stores its configuration locally and supports options such as:
 
-Or run the versioned script directly, for example:
+- Delete after send
+- Clear log
+- Start with Windows
+- Custom post text
+- Post timer
+- Open folder shortcut
 
-```bash
-python v3.0.21.py
-```
+## Removed behavior
 
-## Basic workflow
+As of **3.0.24**, the project no longer includes the old **Debug Mode** system.
+
+Removed items include:
+
+- Debug Mode toggle
+- `debug_mode` config usage
+- `debug.json`
+- verbose debug logging flow
+
+The app now stays quiet during normal operation, showing only standard Python errors if something actually breaks.
+
+## How to use
 
 1. Open the app
 2. Set your Discord webhook URL
-3. Choose the watched folder
-4. Configure the custom post if needed
-5. Turn monitoring on
-6. Let the app send supported files automatically
-
-## Custom post variables
-
-The post editor supports these variables:
-
-- `{filename}`
-- `{creation_str}`
-- `{upload_str}`
-
-## Local files
-
-The app stores its local data in:
-
-```text
-%LOCALAPPDATA%\disc-drive
-```
-
-Typical files and folders:
-
-- `config.json`
-- `sent_log.json`
-- `debug.json`
-- `thumbs-log\`
-- `default-img.png`
-- `webhook-default-avatar.png`
+3. Choose the folder to monitor
+4. Adjust the settings you want
+5. Edit the post text if needed
+6. Leave the app running or minimize it to tray
+7. New supported files will be queued and sent automatically
 
 ## Notes
 
-- If **Delete after send** is disabled, the app keeps the file and relies on the send log to avoid duplicates
-- Clearing the log allows previously processed files to be sent again
-- New thumbnail quality improvements apply to newly generated thumbnails
-- The app is currently designed around a Windows workflow
+- If a webhook has its own avatar, that avatar takes priority
+- Clicking **Clear** in the image area restores the default local image behavior
+- If no local default image exists, the app falls back to the generated blue avatar behavior
+- The app is designed to stay lightweight and visually minimal
+
+## Recommended folder layout
+
+```text
+Discord Webhook Uploader/
+├─ main.py
+├─ files/
+│  └─ default-img.png
+├─ ffmpeg/
+│  └─ bin/
+│     └─ ffmpeg.exe
+```
 
 ## Changelog
 
-See `CHANGELOG.md` for recent version history.
+See `CHANGELOG.md` for version history.

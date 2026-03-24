@@ -55,7 +55,7 @@ except Exception:
 
 APP_NAME = "disc-drive"
 APP_DIR_NAME = "disc-drive"
-APP_VERSION = "3.0.23"
+APP_VERSION = "3.0.24"
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -77,7 +77,6 @@ LOCAL_FFMPEG_PATH = RUNTIME_DIR / "ffmpeg" / "bin" / "ffmpeg.exe"
 BASE_DIR = Path(os.getenv("LOCALAPPDATA", str(Path.home()))) / APP_DIR_NAME
 CONFIG_FILE = BASE_DIR / "config.json"
 LOG_FILE = BASE_DIR / "sent_log.json"
-DEBUG_FILE = BASE_DIR / "debug.json"
 FILES_DIR = RUNTIME_DIR / "files"
 DEFAULT_PLACEHOLDER_IMAGE_FILE = FILES_DIR / "default-img.png"
 WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE = BASE_DIR / "webhook-default-avatar.png"
@@ -121,7 +120,6 @@ MONITOR_CHECK_INTERVAL = 5
 STARTUP_REG_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
 file_lock = threading.RLock()
-debug_lock = threading.RLock()
 thumb_lock = threading.RLock()
 send_lock = threading.Lock()
 sending_event = threading.Event()
@@ -131,44 +129,12 @@ monitoring = False
 stop_event = threading.Event()
 
 
-DEBUG_SESSION_STARTED_AT = datetime.datetime.now().isoformat(timespec="seconds")
-debug_events = []
-
-
 def _debug_enum_value(value):
-    try:
-        enum_name = value.name
-    except Exception:
-        enum_name = None
-    try:
-        enum_value = int(value.value)
-    except Exception:
-        try:
-            enum_value = int(value)
-        except Exception:
-            enum_value = None
-    if enum_name is not None and enum_value is not None:
-        return {"name": str(enum_name), "value": enum_value}
-    if enum_name is not None:
-        return str(enum_name)
-    if enum_value is not None:
-        return enum_value
     return str(value)
 
 
-def _safe_debug_value(value):
-    if isinstance(value, Path):
-        return str(value)
-    if isinstance(value, (str, int, float, bool)) or value is None:
-        return value
-    if isinstance(value, dict):
-        return {str(k): _safe_debug_value(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple, set)):
-        return [_safe_debug_value(v) for v in value]
-    if hasattr(value, "name") or hasattr(value, "value"):
-        return _debug_enum_value(value)
-    return str(value)
-
+def debug_log(*args, **kwargs):
+    return
 
 
 
@@ -213,54 +179,6 @@ def enforce_fixed_window_size(widget, *, width=WINDOW_WIDTH, height=WINDOW_HEIGH
     if widget.width() != width or widget.height() != height:
         set_window_pos_safely(widget, width=width, height=height, move=False, resize=True)
 
-def debug_enabled() -> bool:
-    return bool(globals().get("config", {}).get("debug_mode", False))
-
-
-def debug_snapshot():
-    return {
-        "app_name": APP_NAME,
-        "app_version": APP_VERSION,
-        "session_started_at": DEBUG_SESSION_STARTED_AT,
-        "updated_at": datetime.datetime.now().isoformat(timespec="seconds"),
-        "debug_mode": debug_enabled(),
-        "events": debug_events,
-    }
-
-
-def write_debug_file():
-    with debug_lock:
-        DEBUG_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(DEBUG_FILE, "w", encoding="utf-8") as f:
-            json.dump(debug_snapshot(), f, indent=4, ensure_ascii=False)
-
-
-def debug_log(action: str, **details):
-    if not debug_enabled():
-        return
-    entry = {
-        "index": len(debug_events) + 1,
-        "time": datetime.datetime.now().isoformat(timespec="milliseconds"),
-        "action": action,
-    }
-    if details:
-        entry["details"] = _safe_debug_value(details)
-    line = f"[DEBUG] {entry['time']} | {action}"
-    if details:
-        detail_text = ", ".join(f"{key}={_safe_debug_value(value)}" for key, value in details.items())
-        line += f" | {detail_text}"
-    print(line, flush=True)
-    with debug_lock:
-        debug_events.append(entry)
-    write_debug_file()
-
-
-def init_debug_session():
-    if debug_enabled():
-        with debug_lock:
-            debug_events.clear()
-        write_debug_file()
-        debug_log("debug_session_started", base_dir=str(BASE_DIR), config_file=str(CONFIG_FILE))
 
 
 def load_json(path: Path, default):
@@ -388,7 +306,6 @@ def normalize_config(raw):
         "timer_enabled": bool(raw.get("timer_enabled", legacy_wait_seconds > 0)),
         "delay_minutes": normalize_int(raw.get("delay_minutes", default_delay_minutes), default_delay_minutes, minimum=1),
         "post_interval_seconds": normalize_int(raw.get("post_interval_seconds", DEFAULT_POST_INTERVAL), DEFAULT_POST_INTERVAL, minimum=0),
-        "debug_mode": bool(raw.get("debug_mode", False)),
         "webhook_custom_name": str(raw.get("webhook_custom_name", "") or "").strip(),
         "webhook_default_name": str(raw.get("webhook_default_name", "") or "").strip(),
         "webhook_default_source": str(raw.get("webhook_default_source", "") or "").strip(),
@@ -508,7 +425,6 @@ def save_config():
     BASE_DIR.mkdir(parents=True, exist_ok=True)
     FILES_DIR.mkdir(parents=True, exist_ok=True)
     save_json(CONFIG_FILE, config)
-    debug_log("config_saved", keys=sorted(config.keys()), debug_mode=config.get("debug_mode", False))
     signals.refresh_fields.emit()
 
 
@@ -2793,10 +2709,6 @@ class SettingsPage(PageBase):
         open_layout.addWidget(self.open_cfg_btn)
         self.scroll_body.addWidget(SettingRow("Configuration Folder", str(BASE_DIR), open_wrap))
 
-        self.debug_toggle = ToggleSwitch(config.get("debug_mode", False))
-        self.debug_toggle.clicked.connect(self.toggle_debug_mode)
-        self.scroll_body.addWidget(SettingRow("Debug Mode", "Prints debug logs in the console and writes debug.json while active.", self.debug_toggle))
-
         self.version_value = self.window.make_info_value()
         self.scroll_body.addWidget(SettingRow("App Version", "Current version in use.", self.version_value))
         self.scroll_body.addStretch(1)
@@ -2807,7 +2719,6 @@ class SettingsPage(PageBase):
         self.timer_toggle.setChecked(get_timer_enabled())
         self.timer_input.setText(str(get_delay_minutes()))
         self.update_timer_visibility()
-        self.debug_toggle.setChecked(config.get("debug_mode", False))
         self.version_value.setText(APP_VERSION)
 
     def current_delay_minutes(self) -> int:
@@ -2859,13 +2770,6 @@ class SettingsPage(PageBase):
         debug_log("clear_log_requested")
         clear_sent_log()
         self.window.show_message("success", "Send log cleared.")
-
-    def toggle_debug_mode(self):
-        config["debug_mode"] = self.debug_toggle.isChecked()
-        save_config()
-        if config.get("debug_mode", False):
-            init_debug_session()
-        self.window.show_message("success", "Debug mode updated.")
 
     def open_config_folder(self):
         debug_log("open_config_folder_requested")
@@ -3585,7 +3489,6 @@ if __name__ == "__main__":
     cleanup_legacy_profile_image()
     ensure_thumbs_dir()
     save_config()
-    init_debug_session()
     debug_log("application_bootstrap_started", argv=sys.argv)
 
     app = QApplication(sys.argv)

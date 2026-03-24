@@ -4,6 +4,47 @@ All notable changes to **disc-drive** are documented in this file.
 
 This changelog combines the latest version notes with reconstructed historical entries from uploaded source snapshots. Older versions were rebuilt from source snapshots, so very small visual tweaks may not be listed individually.
 
+## [3.0.24]
+
+### Removed
+
+- Removed the full **Debug Mode** system to reduce code size.
+- Removed the **Debug Mode** toggle from the settings page.
+- Removed `debug_mode` from configuration handling.
+- Removed `debug.json` generation and debug session/file writing.
+
+### Changed
+
+- Kept a no-op internal `debug_log()` stub only to avoid breaking existing call sites while producing no output.
+- The application now stays silent in normal operation, leaving only regular Python errors when something actually breaks.
+
+## [3.0.23]
+
+### Changed
+
+- Moved the default local image lookup from `LOCALAPPDATA` to the application's runtime folder.
+- The app now looks for `files/default-img.png` next to the main script / executable.
+
+## [3.0.22]
+
+### Removed
+
+- Removed the remote URL-based default placeholder download flow.
+- Removed SVG-based placeholder rendering for the default avatar source.
+
+### Changed
+
+- The default image is now expected as a local file at `files/default-img.png`.
+- Added a generated temporary fallback avatar for webhook sending when the local default image is missing.
+- The interface now shows a solid Discord blue block when no local default image is available.
+- Updated avatar handling to prefer:
+  - webhook default avatar
+  - local `default-img.png`
+  - generated temporary Discord blue avatar
+- Standardized the main blue accent color to Discord blue `#5865F2`.
+- Changed the default embed color to Discord blue `#5865F2`.
+- Updated color-related placeholders and hover states to match the new blue palette.
+
 ## [3.0.21]
 
 ### Changed
