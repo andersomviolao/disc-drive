@@ -3297,13 +3297,24 @@ class MainWindow(QWidget):
         if self.drag_pos is not None and event.buttons() & Qt.LeftButton:
             target = event.globalPosition().toPoint() - self.drag_pos
             set_window_pos_safely(self, x=target.x(), y=target.y(), move=True, resize=False)
-            debug_log("window_drag_moved", target_x=target.x(), target_y=target.y(), width=self.width(), height=self.height())
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
-        debug_log("window_drag_released", width=self.width(), height=self.height())
+        if self.is_dragging:
+            start_pos = self._drag_origin if self._drag_origin is not None else self.pos()
+            end_pos = self.pos()
+            debug_log(
+                "window_drag_released",
+                start_x=start_pos.x(),
+                start_y=start_pos.y(),
+                end_x=end_pos.x(),
+                end_y=end_pos.y(),
+                width=self.width(),
+                height=self.height(),
+            )
         self.drag_pos = None
         self.is_dragging = False
+        self._drag_origin = None
         self.ensure_expected_geometry()
         save_window_position(self)
         super().mouseReleaseEvent(event)
