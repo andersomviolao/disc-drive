@@ -32,7 +32,7 @@ except Exception:
     winreg = None
 APP_NAME = 'disc-drive'
 APP_DIR_NAME = 'disc-drive'
-APP_VERSION = '3.0.50'
+APP_VERSION = '3.0.52'
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -149,6 +149,8 @@ THUMB_CACHE_DIMENSION = 300
 THUMB_HOME_COLUMNS = 7
 THUMB_HOME_ROWS = 2
 THUMB_HOME_VISIBLE_COUNT = THUMB_HOME_COLUMNS * THUMB_HOME_ROWS
+THUMB_HOME_MIN_SPACING = 8
+THUMB_HOME_ROW_SPACING = 8
 THUMB_LOG_LIMIT = 1000
 IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'}
 VIDEO_EXTENSIONS = {'.mp4', '.mov', '.m4v', '.avi', '.mkv', '.webm', '.wmv', '.mpeg', '.mpg', '.m2ts', '.ts'}
@@ -1926,27 +1928,74 @@ class ThumbnailTile(QLabel):
 
 class ThumbnailStrip(QWidget):
 
-    def __init__(self, tile_size: int=THUMB_TILE_SIZE, visible_count: int=THUMB_HOME_VISIBLE_COUNT, columns: int=THUMB_HOME_COLUMNS, spacing: int=8, row_spacing: int=8, parent=None):
+    def __init__(self, tile_size: int=THUMB_TILE_SIZE, visible_count: int=THUMB_HOME_VISIBLE_COUNT, columns: int=THUMB_HOME_COLUMNS, spacing: int=THUMB_HOME_MIN_SPACING, row_spacing: int=THUMB_HOME_ROW_SPACING, parent=None):
         super().__init__(parent)
         self.tile_size = tile_size
         self.visible_count = visible_count
-        self.columns = max(1, columns)
-        self.rows = max(1, int(math.ceil(self.visible_count / self.columns)))
-        self.spacing = spacing
+        self.max_columns = max(1, columns)
+        self.min_spacing = spacing
         self.row_spacing = row_spacing
         self.visible_tiles = []
         self._animations = []
-        total_width = tile_size * self.columns + spacing * max(0, self.columns - 1)
-        total_height = tile_size * self.rows + row_spacing * max(0, self.rows - 1)
-        self.setFixedSize(total_width, total_height)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setMinimumHeight(self._height_for_count(0))
         self.setStyleSheet('background: transparent;')
 
-    def slot_pos(self, index: int) -> QPoint:
-        col = index % self.columns
-        row = index // self.columns
-        x = col * (self.tile_size + self.spacing)
-        y = row * (self.tile_size + self.row_spacing)
-        return QPoint(x, y)
+    def _row_counts(self, total_items: int) -> list[int]:
+        remaining = max(0, min(total_items, self.visible_count))
+        counts = []
+        while remaining > 0:
+            take = min(self.max_columns, remaining)
+            counts.append(take)
+            remaining -= take
+        return counts
+
+    def _height_for_count(self, total_items: int) -> int:
+        row_count = len(self._row_counts(total_items))
+        if row_count <= 0:
+            return 0
+        return self.tile_size * row_count + self.row_spacing * max(0, row_count - 1)
+
+    def _layout_metrics_for_row(self, row_item_count: int) -> tuple[float, float]:
+        available_width = max(self.width(), row_item_count * self.tile_size)
+        if row_item_count <= 0:
+            return 0.0, 0.0
+        if row_item_count == 1:
+            start_x = max(0.0, (available_width - self.tile_size) / 2.0)
+            return start_x, 0.0
+        spacing = max(self.min_spacing, (available_width - (row_item_count * self.tile_size)) / float(row_item_count - 1))
+        row_width = row_item_count * self.tile_size + (row_item_count - 1) * spacing
+        start_x = max(0.0, (available_width - row_width) / 2.0)
+        return start_x, spacing
+
+    def slot_pos(self, index: int, total_items: int | None=None) -> QPoint:
+        if total_items is None:
+            total_items = len(self.visible_tiles)
+        row_counts = self._row_counts(total_items)
+        remaining = index
+        row = 0
+        for row, count in enumerate(row_counts):
+            if remaining < count:
+                start_x, spacing = self._layout_metrics_for_row(count)
+                x = start_x + remaining * (self.tile_size + spacing)
+                y = row * (self.tile_size + self.row_spacing)
+                return QPoint(int(round(x)), int(round(y)))
+            remaining -= count
+        return QPoint(0, 0)
+
+    def _apply_geometry(self, total_items: int):
+        target_height = self._height_for_count(total_items)
+        self.setFixedHeight(target_height)
+
+    def relayout_tiles(self):
+        total_items = len(self.visible_tiles)
+        self._apply_geometry(total_items)
+        for index, tile in enumerate(self.visible_tiles):
+            tile.move(self.slot_pos(index, total_items))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.relayout_tiles()
 
     def has_items(self) -> bool:
         return bool(self.visible_tiles)
@@ -1974,16 +2023,20 @@ class ThumbnailStrip(QWidget):
             tile.hide()
             tile.deleteLater()
         self.visible_tiles = []
+        self._apply_geometry(0)
 
     def set_paths(self, paths):
         self.clear_tiles()
-        for index, path in enumerate(paths[:self.visible_count]):
+        visible_paths = paths[:self.visible_count]
+        self._apply_geometry(len(visible_paths))
+        for index, path in enumerate(visible_paths):
             tile = ThumbnailTile(self.tile_size, self)
             tile.set_thumbnail(path)
-            tile.move(self.slot_pos(index))
+            tile.move(self.slot_pos(index, len(visible_paths)))
             tile.set_opacity(1.0)
             tile.show()
             self.visible_tiles.append(tile)
+        QTimer.singleShot(0, self.relayout_tiles)
 
     def refresh_from_disk(self, animate: bool=False, new_path: str=''):
         paths = [str(path) for path in iter_saved_thumbnail_files(limit=self.visible_count)]
@@ -2015,10 +2068,12 @@ class ThumbnailStrip(QWidget):
         self.stop_animations()
         outgoing_tile = self.visible_tiles[-1] if len(self.visible_tiles) >= self.visible_count else None
         moving_tiles = self.visible_tiles[:-1] if outgoing_tile else list(self.visible_tiles)
+        final_total = min(len(moving_tiles) + 1, self.visible_count)
+        self._apply_geometry(final_total)
 
         new_tile = ThumbnailTile(self.tile_size, self)
         new_tile.set_thumbnail(new_path)
-        new_tile.move(self.slot_pos(0))
+        new_tile.move(self.slot_pos(0, final_total))
         new_tile.set_opacity(0.0)
         new_tile.show()
         new_tile.raise_()
@@ -2034,7 +2089,7 @@ class ThumbnailStrip(QWidget):
             move_anim = QPropertyAnimation(tile, b'pos', self)
             move_anim.setDuration(170)
             move_anim.setStartValue(tile.pos())
-            move_anim.setEndValue(self.slot_pos(index))
+            move_anim.setEndValue(self.slot_pos(index, final_total))
             move_anim.setEasingCurve(QEasingCurve.OutCubic)
             self._track_animation(move_anim)
 
@@ -2053,6 +2108,7 @@ class ThumbnailStrip(QWidget):
             self._track_animation(fade_out)
 
         self.visible_tiles = [new_tile] + moving_tiles[:self.visible_count - 1]
+        QTimer.singleShot(0, self.relayout_tiles)
 
 class HomePage(PageBase):
 
@@ -2060,6 +2116,20 @@ class HomePage(PageBase):
     def __init__(self, window):
         super().__init__(f'{APP_NAME} v{APP_VERSION}', 'Simple monitoring, polished visuals, and everything inside the same interface.')
         self.window = window
+
+        top_row = QHBoxLayout()
+        top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.setSpacing(PAGE_TOP_ROW_SPACING)
+        self.pause_btn = self.window.make_small_button('Pause', self.window.toggle_monitoring, accent=BLUE)
+        self.pause_btn.setMinimumWidth(BTN_MIN_W)
+        top_row.addWidget(self.pause_btn)
+        top_row.addStretch(1)
+        self.cfg_btn = self.window.make_secondary_button('Settings', self.window.open_settings_page)
+        self.cfg_btn.setToolTip('Settings')
+        self.cfg_btn.setMinimumWidth(BTN_MIN_W)
+        top_row.addWidget(self.cfg_btn)
+        self.body.addLayout(top_row)
+
         self.history_wrap = QWidget()
         self.history_wrap.setStyleSheet(transparent_row_style())
         self.history_layout = QVBoxLayout(self.history_wrap)
@@ -2069,22 +2139,10 @@ class HomePage(PageBase):
         self.history_label.setStyleSheet(f"color:{TEXT}; font: {font_css(FONT_BASE, FONT_WEIGHT_BOLD)}; background: transparent; border: none;")
         self.history_layout.addWidget(self.history_label)
         self.thumb_strip = ThumbnailStrip(parent=self.history_wrap)
-        self.history_layout.addWidget(self.thumb_strip, 0, Qt.AlignLeft)
+        self.history_layout.addWidget(self.thumb_strip)
         self.body.addWidget(self.history_wrap)
         self.history_wrap.hide()
         self.body.addStretch(1)
-        bottom = QHBoxLayout()
-        bottom.setContentsMargins(0, 0, 0, 0)
-        bottom.addStretch(1)
-        bottom.setSpacing(PAGE_TOP_ROW_SPACING)
-        self.pause_btn = self.window.make_small_button('Pause', self.window.toggle_monitoring, accent=BLUE)
-        self.pause_btn.setMinimumWidth(BTN_MIN_W)
-        bottom.addWidget(self.pause_btn)
-        self.cfg_btn = self.window.make_secondary_button('Settings', self.window.open_settings_page)
-        self.cfg_btn.setToolTip('Settings')
-        self.cfg_btn.setMinimumWidth(BTN_MIN_W)
-        bottom.addWidget(self.cfg_btn)
-        self.body.addLayout(bottom)
 
     def refresh(self):
         self.refresh_thumbnails()
