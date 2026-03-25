@@ -32,7 +32,7 @@ except Exception:
     winreg = None
 APP_NAME = 'disc-drive'
 APP_DIR_NAME = 'disc-drive'
-APP_VERSION = '3.0.36'
+APP_VERSION = '3.0.37'
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -1823,18 +1823,6 @@ class HomePage(PageBase):
     def __init__(self, window):
         super().__init__(f'{APP_NAME} v{APP_VERSION}', 'Simple monitoring, polished visuals, and everything inside the same interface.')
         self.window = window
-        header = QHBoxLayout()
-        header.setContentsMargins(0, 0, 0, 2)
-        left = QVBoxLayout()
-        left.setSpacing(1)
-        left.addWidget(self.title)
-        left.addWidget(self.subtitle)
-        header.addLayout(left, 1)
-        self.cfg_btn = HoverButton('⚙', size=18, tooltip='Settings', bg='transparent', hover='#1d2025', fg='#6f7580', font_size=8)
-        self.cfg_btn.clicked.connect(self.window.open_settings_page)
-        header.addWidget(self.cfg_btn, 0, Qt.AlignTop | Qt.AlignRight)
-        self.layout().insertLayout(0, header)
-        self.layout().removeItem(self.layout().itemAt(1))
         self.history_wrap = QWidget()
         self.history_wrap.setStyleSheet('background: transparent;')
         self.history_layout = QVBoxLayout(self.history_wrap)
@@ -1855,6 +1843,10 @@ class HomePage(PageBase):
         self.pause_btn = self.window.make_small_button('Pause', self.window.toggle_monitoring, accent=BLUE)
         self.pause_btn.setFixedSize(102, 30)
         bottom.addWidget(self.pause_btn)
+        self.cfg_btn = self.window.make_secondary_button('⚙', self.window.open_settings_page)
+        self.cfg_btn.setToolTip('Settings')
+        self.cfg_btn.setFixedSize(30, 30)
+        bottom.addWidget(self.cfg_btn)
         self.body.addLayout(bottom)
 
     def refresh(self):
@@ -1891,6 +1883,11 @@ class PostTemplatePage(PageBase):
         self.window = window
         self._loading = False
         self.color_popup = None
+        back_row = QHBoxLayout()
+        self.back_btn = self.window.make_secondary_button('← Back', self.back_to_settings)
+        back_row.addWidget(self.back_btn)
+        back_row.addStretch(1)
+        self.body.addLayout(back_row)
         self.body.addSpacing(4)
         preview_row = QHBoxLayout()
         preview_row.setContentsMargins(0, 0, 0, 0)
@@ -1923,9 +1920,6 @@ class PostTemplatePage(PageBase):
         buttons = QHBoxLayout()
         buttons.setContentsMargins(0, 0, 0, 0)
         buttons.setSpacing(8)
-        self.back_btn = self.window.make_secondary_button('← Back', self.back_to_settings)
-        self.back_btn.setFixedSize(88, 30)
-        buttons.addWidget(self.back_btn)
         self.test_btn = self.window.make_small_button('Test Webhook', self.test_webhook)
         self.test_btn.setFixedSize(108, 30)
         buttons.addWidget(self.test_btn)
