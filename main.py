@@ -79,10 +79,12 @@ CONFIG_FILE = BASE_DIR / "config.json"
 LOG_FILE = BASE_DIR / "sent_log.json"
 FILES_DIR = RUNTIME_DIR / "files"
 DEFAULT_PLACEHOLDER_IMAGE_FILE = FILES_DIR / "default-img.png"
-WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE = BASE_DIR / "webhook-default-avatar.png"
+WEBHOOK_CAPTURED_PROFILE_IMAGE_FILE = BASE_DIR / "webhook-default-avatar.png"
+CUSTOM_PROFILE_IMAGE_FILE = BASE_DIR / "webhook-custom-avatar.png"
 LEGACY_PROFILE_IMAGE_FILE = BASE_DIR / "profile-img.png"
 AVATAR_MODE_AUTO = "auto"
 AVATAR_MODE_DEFAULT = "default"
+AVATAR_MODE_CUSTOM = "custom"
 THUMBS_DIR = BASE_DIR / "thumbs-log"
 THUMB_TILE_SIZE = 64
 THUMB_CACHE_DIMENSION = 300
@@ -309,7 +311,7 @@ def normalize_config(raw):
         "webhook_custom_name": str(raw.get("webhook_custom_name", "") or "").strip(),
         "webhook_default_name": str(raw.get("webhook_default_name", "") or "").strip(),
         "webhook_default_source": str(raw.get("webhook_default_source", "") or "").strip(),
-        "avatar_mode": str(raw.get("avatar_mode", AVATAR_MODE_AUTO) or AVATAR_MODE_AUTO).strip().lower() if str(raw.get("avatar_mode", AVATAR_MODE_AUTO) or AVATAR_MODE_AUTO).strip().lower() in {AVATAR_MODE_AUTO, AVATAR_MODE_DEFAULT} else AVATAR_MODE_AUTO,
+        "avatar_mode": str(raw.get("avatar_mode", AVATAR_MODE_AUTO) or AVATAR_MODE_AUTO).strip().lower() if str(raw.get("avatar_mode", AVATAR_MODE_AUTO) or AVATAR_MODE_AUTO).strip().lower() in {AVATAR_MODE_AUTO, AVATAR_MODE_DEFAULT, AVATAR_MODE_CUSTOM} else AVATAR_MODE_AUTO,
         "monitoring_enabled": bool(raw.get("monitoring_enabled", True)),
         "window_x": normalize_int(raw.get("window_x", -1), -1, minimum=-1),
         "window_y": normalize_int(raw.get("window_y", -1), -1, minimum=-1),
@@ -541,6 +543,15 @@ def cleanup_legacy_profile_image():
         debug_log("legacy_profile_image_remove_failed", path=str(LEGACY_PROFILE_IMAGE_FILE), error=str(exc))
 
 
+def delete_avatar_file(path: Path, log_name: str):
+    try:
+        if path.exists():
+            path.unlink()
+            debug_log(log_name, path=str(path))
+    except Exception as exc:
+        debug_log(f"{log_name}_failed", path=str(path), error=str(exc))
+
+
 def ensure_default_profile_image(size: int = 256, force_refresh: bool = True):
     global _last_default_placeholder_status
     try:
@@ -572,19 +583,20 @@ def save_custom_profile_image(source_path: str):
     cropped = square_pixmap_from_file(source, size=256)
     if cropped is None:
         return False, "Could not open the selected image."
-    WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    if not cropped.save(str(WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE), "PNG"):
+    CUSTOM_PROFILE_IMAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    if not cropped.save(str(CUSTOM_PROFILE_IMAGE_FILE), "PNG"):
         return False, "Could not save the profile image."
-    config["avatar_mode"] = AVATAR_MODE_AUTO
+    config["avatar_mode"] = AVATAR_MODE_CUSTOM
     reset_avatar_sync_cache()
     save_config()
-    debug_log("custom_profile_image_saved", source=str(source), target=str(WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE))
-    return True, str(WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE)
+    debug_log("custom_profile_image_saved", source=str(source), target=str(CUSTOM_PROFILE_IMAGE_FILE))
+    return True, str(CUSTOM_PROFILE_IMAGE_FILE)
 
 
 def remove_custom_profile_image():
     cleanup_legacy_profile_image()
-    config["avatar_mode"] = AVATAR_MODE_DEFAULT
+    delete_avatar_file(CUSTOM_PROFILE_IMAGE_FILE, "custom_profile_image_deleted")
+    config["avatar_mode"] = AVATAR_MODE_AUTO
     reset_avatar_sync_cache()
     save_config()
     debug_log("custom_profile_image_removed", removed=True, mode=config.get("avatar_mode", AVATAR_MODE_AUTO))
@@ -595,9 +607,8 @@ def image_file_to_data_uri(path: Path):
     try:
         if not path.exists():
             return None
-        raw = path.read_bytes()
-        encoded = base64.b64encode(raw).decode("ascii")
-        return f"data:image/png;base64,{encoded}"
+        pixmap = square_pixmap_from_file(path, size=256) or QPixmap(str(path))
+        return pixmap_to_data_uri(pixmap)
     except Exception as exc:
         debug_log("image_file_to_data_uri_failed", path=str(path), error=str(exc))
         return None
@@ -613,9 +624,14 @@ def is_usable_image_file(path: Path | None) -> bool:
         return False
 
 
+def should_use_custom_avatar() -> bool:
+    avatar_mode = str(config.get("avatar_mode", AVATAR_MODE_AUTO) or AVATAR_MODE_AUTO).strip().lower()
+    return avatar_mode == AVATAR_MODE_CUSTOM and is_usable_image_file(CUSTOM_PROFILE_IMAGE_FILE)
+
+
 def should_use_webhook_default_avatar() -> bool:
     avatar_mode = str(config.get("avatar_mode", AVATAR_MODE_AUTO) or AVATAR_MODE_AUTO).strip().lower()
-    return avatar_mode != AVATAR_MODE_DEFAULT and webhook_defaults_match_current() and is_usable_image_file(WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE)
+    return avatar_mode != AVATAR_MODE_DEFAULT and avatar_mode != AVATAR_MODE_CUSTOM and webhook_defaults_match_current() and is_usable_image_file(WEBHOOK_CAPTURED_PROFILE_IMAGE_FILE)
 
 
 def should_use_local_default_avatar() -> bool:
@@ -627,8 +643,10 @@ def should_use_generated_default_avatar() -> bool:
 
 
 def get_effective_avatar_file() -> Path | None:
+    if should_use_custom_avatar():
+        return CUSTOM_PROFILE_IMAGE_FILE
     if should_use_webhook_default_avatar():
-        return WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE
+        return WEBHOOK_CAPTURED_PROFILE_IMAGE_FILE
     if should_use_local_default_avatar():
         return DEFAULT_PLACEHOLDER_IMAGE_FILE
     return None
@@ -644,9 +662,9 @@ def should_refresh_webhook_avatar_cache(webhook_url: str | None = None, force: b
     if config.get("webhook_default_source", "") != identity_key:
         return True
     avatar_mode = str(config.get("avatar_mode", AVATAR_MODE_AUTO) or AVATAR_MODE_AUTO).strip().lower()
-    if avatar_mode == AVATAR_MODE_DEFAULT:
+    if avatar_mode in {AVATAR_MODE_DEFAULT, AVATAR_MODE_CUSTOM}:
         return False
-    return not is_usable_image_file(WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE)
+    return not is_usable_image_file(WEBHOOK_CAPTURED_PROFILE_IMAGE_FILE)
 
 
 def refresh_avatar_state(webhook_url: str | None = None, force_fetch: bool = False, sync_remote: bool = False):
@@ -669,7 +687,8 @@ def capture_webhook_defaults(webhook_url: str | None = None):
         response = requests.get(webhook_url, timeout=12)
         if response.status_code != 200:
             config["webhook_default_source"] = identity_key
-            config["avatar_mode"] = AVATAR_MODE_AUTO
+            if str(config.get("avatar_mode", AVATAR_MODE_AUTO) or AVATAR_MODE_AUTO).strip().lower() != AVATAR_MODE_CUSTOM:
+                config["avatar_mode"] = AVATAR_MODE_AUTO
             save_config()
             debug_log("capture_webhook_defaults_failed", status_code=response.status_code)
             return False
@@ -677,30 +696,30 @@ def capture_webhook_defaults(webhook_url: str | None = None):
         data = response.json() if response.content else {}
         config["webhook_default_name"] = str(data.get("name") or "").strip()
         avatar_hash = data.get("avatar")
-        WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        WEBHOOK_CAPTURED_PROFILE_IMAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
         if avatar_hash and data.get("id"):
             avatar_url = f"https://cdn.discordapp.com/avatars/{data.get('id')}/{avatar_hash}.png?size=256"
             avatar_response = requests.get(avatar_url, timeout=12)
             if avatar_response.status_code == 200 and avatar_response.content:
-                WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE.write_bytes(avatar_response.content)
+                WEBHOOK_CAPTURED_PROFILE_IMAGE_FILE.write_bytes(avatar_response.content)
                 debug_log("capture_webhook_defaults_avatar_saved", avatar_url=avatar_url)
             else:
-                if WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE.exists():
-                    WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE.unlink()
+                delete_avatar_file(WEBHOOK_CAPTURED_PROFILE_IMAGE_FILE, "webhook_default_avatar_deleted")
                 debug_log("capture_webhook_defaults_avatar_missing", status_code=avatar_response.status_code)
         else:
-            if WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE.exists():
-                WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE.unlink()
+            delete_avatar_file(WEBHOOK_CAPTURED_PROFILE_IMAGE_FILE, "webhook_default_avatar_deleted")
             debug_log("capture_webhook_defaults_avatar_none")
         config["webhook_default_source"] = identity_key
-        config["avatar_mode"] = AVATAR_MODE_AUTO
+        if str(config.get("avatar_mode", AVATAR_MODE_AUTO) or AVATAR_MODE_AUTO).strip().lower() != AVATAR_MODE_CUSTOM:
+            config["avatar_mode"] = AVATAR_MODE_AUTO
         reset_avatar_sync_cache()
         save_config()
         debug_log("capture_webhook_defaults_finished", webhook_default_name=config.get("webhook_default_name", ""), avatar_mode=config.get("avatar_mode", AVATAR_MODE_AUTO))
         return True
     except Exception as exc:
         config["webhook_default_source"] = identity_key
-        config["avatar_mode"] = AVATAR_MODE_AUTO
+        if str(config.get("avatar_mode", AVATAR_MODE_AUTO) or AVATAR_MODE_AUTO).strip().lower() != AVATAR_MODE_CUSTOM:
+            config["avatar_mode"] = AVATAR_MODE_AUTO
         save_config()
         debug_log("capture_webhook_defaults_exception", error=str(exc))
         return False
@@ -742,16 +761,23 @@ def sync_webhook_avatar(force: bool = False):
         avatar_payload = None
         source = "none"
 
+    last_status_code = None
     try:
-        response = requests.patch(webhook_url, json={"avatar": avatar_payload}, timeout=15)
-        if response.status_code in (200, 204):
-            _last_avatar_sync_key = sync_key
-            debug_log("sync_webhook_avatar_finished", success=True, source=source, status_code=response.status_code)
-            return True
-        debug_log("sync_webhook_avatar_finished", success=False, source=source, status_code=response.status_code)
+        for attempt in range(3):
+            response = requests.patch(webhook_url, json={"avatar": avatar_payload}, timeout=15)
+            last_status_code = response.status_code
+            if response.status_code in (200, 204):
+                _last_avatar_sync_key = sync_key
+                time.sleep(0.35)
+                debug_log("sync_webhook_avatar_finished", success=True, source=source, status_code=response.status_code, attempt=attempt + 1)
+                return True
+            if response.status_code != 429:
+                break
+            time.sleep(0.8)
+        debug_log("sync_webhook_avatar_finished", success=False, source=source, status_code=last_status_code)
         return False
     except Exception as exc:
-        debug_log("sync_webhook_avatar_exception", error=str(exc), source=source)
+        debug_log("sync_webhook_avatar_exception", error=str(exc), source=source, status_code=last_status_code)
         return False
 
 
@@ -2335,7 +2361,11 @@ class WebhookPage(PageBase):
         if not is_valid_webhook(text):
             self.window.show_message("error", "Paste a valid webhook URL.")
             return
+        previous_webhook = str(config.get("webhook", "") or "").strip()
         config["webhook"] = text
+        if previous_webhook and previous_webhook != text:
+            delete_avatar_file(CUSTOM_PROFILE_IMAGE_FILE, "custom_profile_image_deleted")
+            config["avatar_mode"] = AVATAR_MODE_AUTO
         reset_avatar_sync_cache()
         save_config()
         refresh_avatar_state(text, force_fetch=True, sync_remote=True)
@@ -2586,8 +2616,7 @@ class PostTemplatePage(PageBase):
         self.window.show_message("success", "Webhook image updated.")
 
     def remove_profile_image(self):
-        avatar_file = get_effective_avatar_file()
-        had_custom_image = avatar_file is not None and str(avatar_file) != str(DEFAULT_PLACEHOLDER_IMAGE_FILE)
+        had_custom_image = should_use_custom_avatar()
         had_custom_name = bool((self.name_input.text() or "").strip()) or bool(get_custom_webhook_name())
         if not had_custom_image and not had_custom_name:
             return
