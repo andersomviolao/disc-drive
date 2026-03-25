@@ -32,7 +32,7 @@ except Exception:
     winreg = None
 APP_NAME = 'disc-drive'
 APP_DIR_NAME = 'disc-drive'
-APP_VERSION = '3.0.38'
+APP_VERSION = '3.0.39'
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -1847,7 +1847,7 @@ class HomePage(PageBase):
         self.cfg_btn.setCursor(Qt.PointingHandCursor)
         self.cfg_btn.clicked.connect(self.window.open_settings_page)
         self.cfg_btn.setToolTip('Settings')
-        self.cfg_btn.setFixedSize(30, 30)
+        self.cfg_btn.setFixedSize(32, 32)
         self.cfg_btn.setStyleSheet(self.window.round_icon_button_style())
         bottom.addWidget(self.cfg_btn)
         self.body.addLayout(bottom)
@@ -1889,6 +1889,7 @@ class PostTemplatePage(PageBase):
 
         top_row = QHBoxLayout()
         top_row.setContentsMargins(0, 0, 0, 0)
+        top_row.setSpacing(8)
         self.back_btn = self.window.make_secondary_button('← Back', self.back_to_settings)
         top_row.addWidget(self.back_btn)
         top_row.addStretch(1)
@@ -1897,30 +1898,45 @@ class PostTemplatePage(PageBase):
         top_row.addWidget(self.test_btn)
         self.body.addLayout(top_row)
 
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.NoFrame)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll.setStyleSheet(self.window.scrollbar_style('QScrollArea'))
+        self.scroll_host = QWidget()
+        self.scroll_host.setStyleSheet('background: transparent;')
+        self.scroll_body = QVBoxLayout(self.scroll_host)
+        self.scroll_body.setContentsMargins(0, 0, 4, 0)
+        self.scroll_body.setSpacing(10)
+        self.scroll.setWidget(self.scroll_host)
+        self.body.addWidget(self.scroll, 1)
+
         self.profile_card = CardSection('Webhook Profile', 'Choose the avatar, set the webhook name, or clear the current custom data.')
+        self.profile_card.setMinimumHeight(104)
         profile_row = QHBoxLayout()
         profile_row.setContentsMargins(0, 0, 0, 0)
-        profile_row.setSpacing(10)
-        self.avatar_preview = AvatarPreview(44)
+        profile_row.setSpacing(12)
+        self.avatar_preview = AvatarPreview(46)
         self.avatar_preview.clicked.connect(self.choose_profile_image)
         profile_row.addWidget(self.avatar_preview, 0, Qt.AlignVCenter)
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText(APP_NAME)
-        self.name_input.setMinimumHeight(36)
+        self.name_input.setMinimumHeight(38)
         self.name_input.setStyleSheet(self.window.input_style())
         self.name_input.editingFinished.connect(self.on_name_editing_finished)
         self.name_input.textChanged.connect(self.on_name_text_changed)
         profile_row.addWidget(self.name_input, 1)
         self.clear_profile_btn = self.window.make_small_button('Clear', self.remove_profile_image)
-        self.clear_profile_btn.setFixedSize(82, 30)
+        self.clear_profile_btn.setFixedSize(82, 32)
         self.clear_profile_btn.setToolTip('Clear current image and custom name')
         profile_row.addWidget(self.clear_profile_btn, 0, Qt.AlignVCenter)
         self.profile_card.content_layout.addLayout(profile_row)
-        self.body.addWidget(self.profile_card)
+        self.scroll_body.addWidget(self.profile_card)
 
         self.embed_card = CardSection('Embed', 'Enable embed mode and choose the accent color that will be used on Discord.')
+        self.embed_card.setMinimumHeight(86)
         embed_row = QHBoxLayout()
-        embed_row.setContentsMargins(0, 0, 0, 0)
+        embed_row.setContentsMargins(0, 4, 0, 0)
         embed_row.setSpacing(8)
         embed_row.addStretch(1)
         self.color_btn = ColorSwatchButton(config.get('embed_color', DEFAULT_EMBED_COLOR))
@@ -1930,20 +1946,23 @@ class PostTemplatePage(PageBase):
         self.embed_toggle.clicked.connect(self.toggle_embed)
         embed_row.addWidget(self.embed_toggle, 0, Qt.AlignVCenter)
         self.embed_card.content_layout.addLayout(embed_row)
-        self.body.addWidget(self.embed_card)
+        self.scroll_body.addWidget(self.embed_card)
 
         self.content_card = CardSection('Post Content', 'Edit the message template that will be sent together with the file.')
+        self.content_card.setMinimumHeight(232)
         self.editor = QTextEdit()
         self.editor.setPlaceholderText('Type the post content here...')
         self.editor.setStyleSheet(self.window.post_editor_style())
         self.editor.textChanged.connect(self.on_editor_text_changed)
-        self.editor.setMinimumHeight(128)
+        self.editor.setMinimumHeight(166)
+        self.editor.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.content_card.content_layout.addWidget(self.editor, 1)
         self.help_label = QLabel('Variables: {filename}  •  {creation_str}  •  {upload_str}')
         self.help_label.setWordWrap(True)
         self.help_label.setStyleSheet(f"color:{MUTED}; font: 500 8px 'Segoe UI';")
         self.content_card.content_layout.addWidget(self.help_label)
-        self.body.addWidget(self.content_card, 1)
+        self.scroll_body.addWidget(self.content_card)
+        self.scroll_body.addStretch(1)
 
     def update_embed_controls_visibility(self):
         use_embed = self.embed_toggle.isChecked()
@@ -1980,6 +1999,7 @@ class PostTemplatePage(PageBase):
         has_webhook = bool((config.get('webhook') or '').strip())
         self.test_btn.setEnabled(has_webhook)
         self.test_btn.setStyleSheet(self.window.small_button_style(enabled=has_webhook, accent=BLUE))
+        self.scroll.verticalScrollBar().setValue(0)
         self._loading = False
         self.editor.setFocus()
         cursor = self.editor.textCursor()
@@ -2431,7 +2451,7 @@ class MainWindow(QWidget):
         return btn
 
     def round_icon_button_style(self):
-        return f"\n        QPushButton {{\n            background: #24272d;\n            color: {TEXT};\n            border: 1px solid #30343d;\n            border-radius: 15px;\n            padding: 0;\n            font: 700 12px 'Segoe UI Emoji';\n        }}\n        QPushButton:hover {{ background: #2b3038; }}\n        "
+        return f"\n        QPushButton {{\n            background: #24272d;\n            color: {TEXT};\n            border: 1px solid #30343d;\n            border-radius: 16px;\n            padding: 0;\n            font: 700 13px 'Segoe UI Emoji';\n        }}\n        QPushButton:hover {{ background: #2b3038; }}\n        "
 
     def small_button_style(self, enabled=True, accent=BLUE, hover=None, text_color=None):
         if enabled:
