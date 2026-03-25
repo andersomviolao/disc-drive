@@ -32,7 +32,7 @@ except Exception:
     winreg = None
 APP_NAME = 'disc-drive'
 APP_DIR_NAME = 'disc-drive'
-APP_VERSION = '3.0.32'
+APP_VERSION = '3.0.33'
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -2268,17 +2268,10 @@ class SettingsPage(PageBase):
         webhook_wrap.setStyleSheet('background: transparent;')
         webhook_layout = QHBoxLayout(webhook_wrap)
         webhook_layout.setContentsMargins(0, 0, 0, 0)
-        webhook_layout.setSpacing(6)
-        self.webhook_input = QLineEdit()
-        self.webhook_input.setPlaceholderText('https://discord.com/api/webhooks/...')
-        self.webhook_input.setFixedSize(226, 28)
-        self.webhook_input.setStyleSheet(self.window.compact_input_style())
-        self.webhook_input.returnPressed.connect(self.save_webhook)
-        webhook_layout.addWidget(self.webhook_input, 0, Qt.AlignVCenter)
-        self.webhook_save_btn = self.window.make_small_button('Save', self.save_webhook, accent=BLUE)
-        self.webhook_save_btn.setFixedSize(58, 28)
-        webhook_layout.addWidget(self.webhook_save_btn, 0, Qt.AlignVCenter)
-        self.scroll_body.addWidget(SettingRow('Webhook', 'Paste the full Discord webhook URL here.', webhook_wrap))
+        self.webhook_paste_btn = self.window.make_small_button('Paste', self.paste_webhook)
+        webhook_layout.addWidget(self.webhook_paste_btn)
+        self.webhook_row = SettingRow('Webhook', '', webhook_wrap)
+        self.scroll_body.addWidget(self.webhook_row)
 
         folder_wrap = QWidget()
         folder_wrap.setStyleSheet('background: transparent;')
@@ -2337,7 +2330,7 @@ class SettingsPage(PageBase):
         self.scroll_body.addStretch(1)
 
     def refresh(self):
-        self.webhook_input.setText(config.get('webhook', ''))
+        self.update_webhook_row_subtitle()
         self.update_folder_row_subtitle()
         self.start_toggle.setChecked(config.get('start_with_windows', False))
         self.delete_toggle.setChecked(config.get('delete_after_send', True))
@@ -2356,10 +2349,16 @@ class SettingsPage(PageBase):
         visible = self.timer_toggle.isChecked()
         self.timer_input.setVisible(visible)
 
-    def save_webhook(self):
-        text = self.webhook_input.text().strip()
+    def update_webhook_row_subtitle(self):
+        webhook = str(config.get('webhook', '') or '').strip()
+        subtitle = webhook if webhook else 'No webhook set.'
+        self.webhook_row.set_subtitle(subtitle)
+
+    def paste_webhook(self):
+        clipboard = QApplication.clipboard()
+        text = str(clipboard.text() or '').strip()
         if not is_valid_webhook(text):
-            self.window.show_message('error', 'Paste a valid webhook URL.')
+            self.window.show_message('error', 'Clipboard does not contain a valid webhook URL.')
             return
         previous_webhook = str(config.get('webhook', '') or '').strip()
         webhook_changed = previous_webhook != text
@@ -2370,6 +2369,7 @@ class SettingsPage(PageBase):
             config['avatar_mode'] = AVATAR_MODE_WEBHOOK
         reset_avatar_sync_cache()
         save_config()
+        self.update_webhook_row_subtitle()
         refresh_avatar_state(text, force_fetch=webhook_changed or get_avatar_mode() == AVATAR_MODE_WEBHOOK, sync_remote=True)
         self.window.show_message('success', 'Webhook updated.')
 
