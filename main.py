@@ -32,7 +32,7 @@ except Exception:
     winreg = None
 APP_NAME = 'disc-drive'
 APP_DIR_NAME = 'disc-drive'
-APP_VERSION = '3.0.53'
+APP_VERSION = '3.0.54'
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -101,6 +101,7 @@ PAGE_SCROLLBAR_GAP = 2
 SCROLLBAR_RIGHT_INSET = 0
 SCROLLBAR_EXTERNAL_OFFSET = 6
 PAGE_HISTORY_SPACING = 6
+HOME_SCROLL_SPACING = 0
 
 CARD_INNER_ROW_SPACING = 12
 EMBED_ROW_SPACING = 8
@@ -147,7 +148,7 @@ THUMBS_DIR = BASE_DIR / 'thumbs-log'
 THUMB_TILE_SIZE = 64
 THUMB_CACHE_DIMENSION = 300
 THUMB_HOME_COLUMNS = 7
-THUMB_HOME_ROWS = 2
+THUMB_HOME_ROWS = 5
 THUMB_HOME_VISIBLE_COUNT = THUMB_HOME_COLUMNS * THUMB_HOME_ROWS
 THUMB_HOME_MIN_SPACING = 8
 THUMB_HOME_ROW_SPACING = 8
@@ -2122,19 +2123,25 @@ class HomePage(PageBase):
         top_row.addWidget(self.cfg_btn)
         self.body.addLayout(top_row)
 
+        self.scroll = ExternalScrollPane(self.window)
+        self.scroll_host = QWidget()
+        self.scroll_host.setStyleSheet(transparent_row_style())
+        self.scroll_body = QVBoxLayout(self.scroll_host)
+        self.scroll_body.setContentsMargins(0, 0, PAGE_SCROLL_CONTENT_RIGHT_PADDING, 0)
+        self.scroll_body.setSpacing(HOME_SCROLL_SPACING)
+        self.scroll.setWidget(self.scroll_host)
+        self.body.addWidget(self.scroll, 1)
+
         self.history_wrap = QWidget()
         self.history_wrap.setStyleSheet(transparent_row_style())
         self.history_layout = QVBoxLayout(self.history_wrap)
         self.history_layout.setContentsMargins(0, 0, 0, 0)
         self.history_layout.setSpacing(PAGE_HISTORY_SPACING)
-        self.history_label = QLabel('Last sent')
-        self.history_label.setStyleSheet(f"color:{TEXT}; font: {font_css(FONT_BASE, FONT_WEIGHT_BOLD)}; background: transparent; border: none;")
-        self.history_layout.addWidget(self.history_label)
         self.thumb_strip = ThumbnailStrip(parent=self.history_wrap)
         self.history_layout.addWidget(self.thumb_strip)
-        self.body.addWidget(self.history_wrap)
+        self.scroll_body.addWidget(self.history_wrap)
+        self.scroll_body.addStretch(1)
         self.history_wrap.hide()
-        self.body.addStretch(1)
 
     def refresh(self):
         self.refresh_thumbnails()
@@ -2143,6 +2150,8 @@ class HomePage(PageBase):
     def refresh_thumbnails(self):
         self.thumb_strip.refresh_from_disk(animate=False)
         self.history_wrap.setVisible(self.thumb_strip.has_items())
+        self.scroll_host.adjustSize()
+        self.scroll.refresh_scrollbar()
 
     def on_thumbnail_changed(self, thumb_path: str, animate: bool):
         if animate:
@@ -2152,6 +2161,8 @@ class HomePage(PageBase):
             if not updated and (not self.thumb_strip.has_items()):
                 self.thumb_strip.refresh_from_disk(animate=False)
         self.history_wrap.setVisible(self.thumb_strip.has_items())
+        self.scroll_host.adjustSize()
+        self.scroll.refresh_scrollbar()
 
     def update_pause_visual(self):
         if monitoring:
@@ -2162,6 +2173,7 @@ class HomePage(PageBase):
             self.pause_btn.setText('Run')
             self.pause_btn.setStyleSheet(self.window.small_button_style(enabled=True, accent=YELLOW, hover='#ffca52', text_color='#1e1a10'))
             self.pause_btn.setToolTip('Resume monitoring')
+
 
 class AutoHeightTextEdit(QTextEdit):
 

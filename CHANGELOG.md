@@ -4,6 +4,155 @@ All notable changes to **disc-drive** are documented in this file.
 
 This changelog combines the latest version notes with reconstructed historical entries from uploaded source snapshots. Older versions were rebuilt from source snapshots, so very small visual tweaks may not be listed individually.
 
+
+
+## [3.0.54]
+
+### Changed
+
+- Expanded the home-page history gallery from 2 rows to 5 rows.
+- Made the home page content scrollable so larger history blocks fit without breaking the fixed window size.
+- Moved the history section into the main home scroll flow and tightened home scroll spacing.
+
+## [3.0.53]
+
+### Changed
+
+- Simplified thumbnail-strip positioning by switching to a fixed 7-column slot layout.
+- Made row placement and spacing more predictable across different history counts.
+
+## [3.0.52]
+
+### Changed
+
+- Reworked the home thumbnail strip to use responsive spacing helpers instead of a fixed overall width.
+- Centered the **Last sent** gallery more cleanly while keeping 7 columns and wrapped rows.
+- Improved row-spacing controls for the home history gallery.
+
+## [3.0.51]
+
+### Fixed
+
+- Fixed external-scrollbar parenting so overlay scrollbars attach to the main panel correctly.
+- Improved scrollbar stacking and placement reliability in pages using the custom external scroll pane.
+
+## [3.0.50]
+
+### Changed
+
+- Moved custom page scrollbars farther outside the content area for cleaner visual alignment.
+- Added logic to re-parent and preserve external scrollbars correctly when page containers change.
+
+## [3.0.49]
+
+### Changed
+
+- Slimmed the custom page scrollbar again for a lighter visual style.
+- Repositioned the external scrollbar to sit tighter against the page edge.
+- Added geometry refresh helpers so the scrollbar tracks page resizing more accurately.
+
+## [3.0.48]
+
+### Added
+
+- Added a custom external vertical scrollbar system for scrollable pages.
+
+### Changed
+
+- Reworked page scroll containers to hide the native Qt vertical scrollbar and use a detached overlay scrollbar instead.
+- Reduced scrollbar width and radius for a cleaner appearance.
+
+## [3.0.47]
+
+### Changed
+
+- Moved more fonts, weights, alignment values, margins, and spacing rules into shared constants.
+- Standardized typography and spacing across pages, cards, popups, and history sections.
+- Tightened scrollbar configuration values for the refreshed layout system.
+
+## [3.0.46]
+
+### Changed
+
+- Reworked the post editor to start at a single visible line and grow automatically with the content.
+- Removed the internal scrollbar from the post text field.
+- Allowed the **Post Content** card itself to expand and shrink with the editor height.
+
+## [3.0.45]
+
+### Changed
+
+- Centralized card styling into shared helpers and layout constants.
+- Standardized card borders, radius, padding, and spacing across the customize page.
+- Rebalanced profile and post-content card minimum heights.
+
+## [3.0.44]
+
+### Changed
+
+- Moved button, input, popup, avatar, and color-control dimensions into shared constants.
+- Standardized the minimum button width to **80px** across the interface.
+- Normalized input, toggle, and popup sizing for a more consistent layout foundation.
+
+## [3.0.43]
+
+### Changed
+
+- Refined the embed-color popup layout by moving the **Hex** label into its own aligned row.
+- Standardized related action buttons to a fixed 28px height for cleaner alignment.
+
+## [3.0.42]
+
+### Changed
+
+- Compacted the overall interface sizing with smaller controls and tighter card proportions.
+- Reduced the embed-color popup footprint and trimmed editor height to match the denser layout.
+- Adjusted button widths and control heights toward a cleaner, more compact presentation.
+
+## [3.0.41]
+
+### Changed
+
+- Reworked button and input styling for a more polished, consistent visual language.
+- Replaced the small gear-only settings action on the home page with a labeled **Settings** button.
+- Standardized 30px control heights across key buttons and fields in the customize flow.
+
+## [3.0.40]
+
+### Changed
+
+- Rebalanced the **Customize Post** page card sizes to reduce empty space and keep the layout more compact.
+- Swapped the embed section to the same setting-row pattern used elsewhere in the interface.
+- Enabled live saving of post-template text while typing in the editor.
+
+## [3.0.39]
+
+### Added
+
+- Added a scrollable container to the **Customize Post** page.
+
+### Changed
+
+- Stacked the profile, embed, and post-content sections inside a scroll area to prevent overflow.
+- Rebalanced card heights and control sizes for the new scrolling layout.
+- Slightly enlarged the top-right settings icon button styling.
+
+## [3.0.38]
+
+### Changed
+
+- Reworked the **Customize Post** page into clearer card-style sections.
+- Updated the home-page settings button to a rounded icon-style action.
+- Refined profile, embed, and post-editor styling for a cleaner, more unified look.
+
+## [3.0.37]
+
+### Changed
+
+- Polished home-page header spacing and settings-button behavior.
+- Added a tooltip to the settings action.
+- Relaxed the fixed width of the customize-page back button for a cleaner header layout.
+
 ## [3.0.36]
 
 ### Removed

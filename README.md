@@ -6,7 +6,7 @@ The project is focused on a simple workflow: watch a folder, queue supported fil
 
 ## Current status
 
-This README reflects the current behavior up to version **3.0.36**.
+This README reflects the current behavior up to version **3.0.54**.
 
 ## What the app includes
 
@@ -30,13 +30,29 @@ Edit webhook, watched folder, and main options directly inside **Settings**.
 
 Customize post text, webhook name, webhook image, and embed color inside **Customize Post**.
 
-Show up to **14** recent thumbnails in a **7 × 2** layout on the home page.
+Show up to **35** recent thumbnails on the home page in a **7 × 5** gallery.
+
+Use a scrollable home layout so larger recent-history sections fit without breaking the fixed window size.
+
+Use a scrollable **Customize Post** page so all cards stay accessible in the compact window.
+
+Use an auto-growing post editor that starts at a single visible line and expands or shrinks with the content.
 
 Clear the sent-history log when needed.
 
 Start with Windows.
 
 Optionally move sent files to the Recycle Bin.
+
+## Supported file types
+
+Images:
+
+`png` `jpg` `jpeg` `gif` `webp` `bmp`
+
+Videos:
+
+`mp4` `mov` `m4v` `avi` `mkv` `webm` `wmv` `mpeg` `mpg` `m2ts` `ts`
 
 ## Webhook and folder setup
 
@@ -49,6 +65,16 @@ Both actions now live directly inside **Settings**:
 3. All changes are saved immediately.
 
 Long webhook URLs are shown in a shortened form in the interface so the layout stays clean.
+
+## Post editor behavior
+
+The **Post Content** area now starts in a compact single-line state.
+
+There is no internal text-field scrollbar.
+
+As the text grows, the card itself grows with it.
+
+When text is removed, the card shrinks back automatically.
 
 ## Avatar behavior
 
@@ -120,6 +146,8 @@ The home page now focuses on monitoring state and recent history.
 The old **Send Now** action is no longer part of the interface.
 
 The settings page is the main place for connection and folder setup.
+
+The interface uses a compact visual system with shared sizing rules for buttons, inputs, cards, and scroll behavior.
 
 The project is Windows-focused because of tray behavior, startup integration, and Windows-specific file handling.
 
