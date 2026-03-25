@@ -596,7 +596,7 @@ def save_custom_profile_image(source_path: str):
 def remove_custom_profile_image():
     cleanup_legacy_profile_image()
     delete_avatar_file(CUSTOM_PROFILE_IMAGE_FILE, "custom_profile_image_deleted")
-    config["avatar_mode"] = AVATAR_MODE_AUTO
+    config["avatar_mode"] = AVATAR_MODE_DEFAULT
     reset_avatar_sync_cache()
     save_config()
     debug_log("custom_profile_image_removed", removed=True, mode=config.get("avatar_mode", AVATAR_MODE_AUTO))
@@ -2460,7 +2460,7 @@ class PostTemplatePage(PageBase):
 
         self.clear_profile_btn = self.window.make_small_button("Clear", self.remove_profile_image)
         self.clear_profile_btn.setFixedSize(82, 30)
-        self.clear_profile_btn.setToolTip("Clear custom image and custom name")
+        self.clear_profile_btn.setToolTip("Clear current image and custom name")
         preview_row.addWidget(self.clear_profile_btn, 0, Qt.AlignVCenter)
 
         self.body.addLayout(preview_row)
@@ -2521,8 +2521,8 @@ class PostTemplatePage(PageBase):
             except Exception:
                 current_avatar_is_default = str(avatar_file) == str(DEFAULT_PLACEHOLDER_IMAGE_FILE)
         has_custom_name = bool((self.name_input.text() or "").strip()) or bool(get_custom_webhook_name())
-        has_non_default_avatar = avatar_file is not None and not current_avatar_is_default
-        has_custom_state = has_non_default_avatar or has_custom_name
+        has_clearable_avatar = should_use_custom_avatar() or should_use_webhook_default_avatar()
+        has_custom_state = has_clearable_avatar or has_custom_name
         self.clear_profile_btn.setEnabled(has_custom_state)
         self.clear_profile_btn.setStyleSheet(self.window.small_button_style(enabled=has_custom_state, accent=BLUE))
         self.name_input.setPlaceholderText(APP_NAME)
@@ -2617,18 +2617,19 @@ class PostTemplatePage(PageBase):
 
     def remove_profile_image(self):
         had_custom_image = should_use_custom_avatar()
+        had_webhook_avatar = should_use_webhook_default_avatar()
         had_custom_name = bool((self.name_input.text() or "").strip()) or bool(get_custom_webhook_name())
-        if not had_custom_image and not had_custom_name:
+        if not had_custom_image and not had_webhook_avatar and not had_custom_name:
             return
-        if had_custom_image and not remove_custom_profile_image():
-            self.window.show_message("error", "Could not remove the webhook image.")
+        if not remove_custom_profile_image():
+            self.window.show_message("error", "Could not reset the webhook image.")
             return
         self.name_input.clear()
         self.save_template(show_feedback=False)
         self.update_profile_preview()
         if (config.get("webhook") or "").strip():
             sync_webhook_avatar(force=True)
-        self.window.show_message("success", "Webhook image and custom name cleared.")
+        self.window.show_message("success", "Webhook image reset to default and custom name cleared.")
 
     def test_webhook(self):
         ok, msg = send_test_message(self.editor.toPlainText(), self.embed_toggle.isChecked(), webhook_name=self.name_input.text())
