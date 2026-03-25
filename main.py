@@ -32,7 +32,7 @@ except Exception:
     winreg = None
 APP_NAME = 'disc-drive'
 APP_DIR_NAME = 'disc-drive'
-APP_VERSION = '3.0.46'
+APP_VERSION = '3.0.47'
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -77,6 +77,48 @@ COLOR_AREA_RADIUS = 14
 
 POPUP_BORDER = 1
 POPUP_RADIUS = 16
+
+FONT_FAMILY = 'Segoe UI'
+FONT_FAMILY_SYMBOL = 'Segoe UI Symbol'
+FONT_FAMILY_EMOJI = 'Segoe UI Emoji'
+FONT_WEIGHT_MEDIUM = 500
+FONT_WEIGHT_SEMIBOLD = 600
+FONT_WEIGHT_BOLD = 700
+
+WINDOW_OUTER_MARGIN = 12
+WINDOW_PANEL_MARGIN_LEFT = 16
+WINDOW_PANEL_MARGIN_TOP = 14
+WINDOW_PANEL_MARGIN_RIGHT = 16
+WINDOW_PANEL_MARGIN_BOTTOM = 12
+WINDOW_ROOT_SPACING = 10
+
+PAGE_ROOT_SPACING = 10
+PAGE_HEADER_SPACING = 1
+PAGE_TOP_ROW_SPACING = 8
+PAGE_SECTION_SPACING = 10
+PAGE_SCROLL_RIGHT_PADDING = 4
+PAGE_HISTORY_SPACING = 6
+
+CARD_INNER_ROW_SPACING = 12
+EMBED_ROW_SPACING = 8
+TIMER_ROW_SPACING = 6
+
+POPUP_PADDING_X = 12
+POPUP_PADDING_Y = 12
+POPUP_CONTENT_SPACING = 10
+POPUP_LABEL_INDENT = 38
+
+SCROLLBAR_WIDTH = 8
+SCROLLBAR_RADIUS = 4
+SCROLLBAR_MARGIN_TOP = 6
+SCROLLBAR_MARGIN_BOTTOM = 6
+SCROLLBAR_MIN_HANDLE_H = 24
+
+STATUS_LABEL_MIN_H = 16
+
+ALIGN_LEFT_VCENTER = Qt.AlignLeft | Qt.AlignVCenter
+ALIGN_LEFT_BOTTOM = Qt.AlignLeft | Qt.AlignBottom
+ALIGN_VCENTER = Qt.AlignVCenter
 
 def get_runtime_dir() -> Path:
     try:
@@ -201,6 +243,12 @@ def card_frame_style(object_name: str) -> str:
             border: none;
         }}
     '''
+
+def font_css(size: int, weight: int=FONT_WEIGHT_SEMIBOLD, family: str=FONT_FAMILY) -> str:
+    return f"{weight} {size}px '{family}'"
+
+def transparent_row_style() -> str:
+    return 'background: transparent;'
 
 def load_json(path: Path, default):
     with file_lock:
@@ -1263,7 +1311,7 @@ class HoverButton(QPushButton):
         self._fg = fg
         self._size = size
         self.setFixedSize(size, size)
-        self.setFont(QFont('Segoe UI Symbol', font_size))
+        self.setFont(QFont(FONT_FAMILY_SYMBOL, font_size))
         self.apply_style(False)
 
     def apply_style(self, hovered):
@@ -1526,11 +1574,11 @@ class EmbedColorPopup(QWidget):
         outer.setSpacing(0)
         panel = QFrame()
         panel.setObjectName('embedColorPopup')
-        panel.setStyleSheet(f"\n            QFrame#embedColorPopup {{\n                background: {PANEL};\n                border: {POPUP_BORDER}px solid #23262d;\n                border-radius: {POPUP_RADIUS}px;\n            }}\n            QLabel {{\n                color: {TEXT};\n                font: 700 9px 'Segoe UI';\n                background: transparent;\n                border: none;\n            }}\n            QLineEdit {{\n                background: {FIELD_BG};\n                color: {FIELD_TEXT};\n                border: {INPUT_BORDER}px solid #2c3038;\n                border-radius: {INPUT_RADIUS}px;\n                padding: 0 12px;\n                min-height: {HEX_INPUT_H}px;\n                font: 700 9px 'Segoe UI';\n            }}\n            QLineEdit:focus {{\n                border: {BTN_BORDER}px solid {BLUE};\n            }}\n            QLineEdit::placeholder {{\n                color: #6f7580;\n            }}\n            ")
+        panel.setStyleSheet(f"\n            QFrame#embedColorPopup {{\n                background: {PANEL};\n                border: {POPUP_BORDER}px solid #23262d;\n                border-radius: {POPUP_RADIUS}px;\n            }}\n            QLabel {{\n                color: {TEXT};\n                font: {font_css(FONT_BASE, FONT_WEIGHT_BOLD)};\n                background: transparent;\n                border: none;\n            }}\n            QLineEdit {{\n                background: {FIELD_BG};\n                color: {FIELD_TEXT};\n                border: {INPUT_BORDER}px solid #2c3038;\n                border-radius: {INPUT_RADIUS}px;\n                padding: 0 12px;\n                min-height: {HEX_INPUT_H}px;\n                font: {font_css(FONT_BASE, FONT_WEIGHT_BOLD)};\n            }}\n            QLineEdit:focus {{\n                border: {BTN_BORDER}px solid {BLUE};\n            }}\n            QLineEdit::placeholder {{\n                color: #6f7580;\n            }}\n            ")
         outer.addWidget(panel)
         root = QVBoxLayout(panel)
-        root.setContentsMargins(12, 12, 12, 12)
-        root.setSpacing(10)
+        root.setContentsMargins(POPUP_PADDING_X, POPUP_PADDING_Y, POPUP_PADDING_X, POPUP_PADDING_Y)
+        root.setSpacing(POPUP_CONTENT_SPACING)
         self.spectrum = ColorSpectrumBox(self._hue, self._sat, self._val)
         self.spectrum.setMinimumSize(COLOR_AREA_MIN_W, COLOR_AREA_H)
         self.spectrum.colorChanged.connect(self.on_sv_changed)
@@ -1539,26 +1587,26 @@ class EmbedColorPopup(QWidget):
         self.hue_slider.hueChanged.connect(self.on_hue_changed)
         root.addWidget(self.hue_slider)
         label_row = QHBoxLayout()
-        label_row.setContentsMargins(38, 0, 0, 0)
+        label_row.setContentsMargins(POPUP_LABEL_INDENT, 0, 0, 0)
         label_row.setSpacing(0)
         self.hex_label = QLabel('Hex')
-        self.hex_label.setStyleSheet(f"color:{TEXT}; font: 700 9px 'Segoe UI';")
-        label_row.addWidget(self.hex_label, 0, Qt.AlignLeft | Qt.AlignBottom)
+        self.hex_label.setStyleSheet(f"color:{TEXT}; font: {font_css(FONT_BASE, FONT_WEIGHT_BOLD)};")
+        label_row.addWidget(self.hex_label, 0, ALIGN_LEFT_BOTTOM)
         label_row.addStretch(1)
         root.addLayout(label_row)
         bottom = QHBoxLayout()
         bottom.setContentsMargins(0, 0, 0, 0)
-        bottom.setSpacing(10)
+        bottom.setSpacing(POPUP_CONTENT_SPACING)
         self.preview = QLabel()
         self.preview.setFixedSize(COLOR_PREVIEW_SIZE, COLOR_PREVIEW_SIZE)
-        bottom.addWidget(self.preview, 0, Qt.AlignVCenter)
+        bottom.addWidget(self.preview, 0, ALIGN_VCENTER)
         self.hex_input = QLineEdit(self.selected_hex)
         self.hex_input.setPlaceholderText(BLUE)
         self.hex_input.setMaxLength(7)
         self.hex_input.setFixedHeight(HEX_INPUT_H)
         self.hex_input.textChanged.connect(self.on_hex_text_changed)
         self.hex_input.editingFinished.connect(self.on_hex_editing_finished)
-        bottom.addWidget(self.hex_input, 1, Qt.AlignVCenter)
+        bottom.addWidget(self.hex_input, 1, ALIGN_VCENTER)
         root.addLayout(bottom)
         self.update_preview(self.selected_hex)
 
@@ -1686,19 +1734,19 @@ class PageBase(QWidget):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(10)
+        root.setSpacing(PAGE_ROOT_SPACING)
         top = QVBoxLayout()
-        top.setSpacing(1)
+        top.setSpacing(PAGE_HEADER_SPACING)
         self.title = QLabel(title)
-        self.title.setStyleSheet(f"color:{BLUE}; font: 700 12px 'Segoe UI';")
+        self.title.setStyleSheet(f"color:{BLUE}; font: {font_css(FONT_TITLE, FONT_WEIGHT_BOLD)};")
         top.addWidget(self.title)
         self.subtitle = QLabel(subtitle)
         self.subtitle.setWordWrap(True)
-        self.subtitle.setStyleSheet(f"color:{MUTED}; font: 500 9px 'Segoe UI';")
+        self.subtitle.setStyleSheet(f"color:{MUTED}; font: {font_css(FONT_BASE, FONT_WEIGHT_MEDIUM)};")
         top.addWidget(self.subtitle)
         root.addLayout(top)
         self.body = QVBoxLayout()
-        self.body.setSpacing(10)
+        self.body.setSpacing(PAGE_SECTION_SPACING)
         root.addLayout(self.body, 1)
 
     def minimumSizeHint(self):
@@ -1713,7 +1761,7 @@ class ThumbnailTile(QLabel):
         self._pixmap = QPixmap()
         self.setFixedSize(size, size)
         self.setAlignment(Qt.AlignCenter)
-        self.setStyleSheet(f'background:{CARD}; border:1px solid {CARD_BORDER}; border-radius:12px;')
+        self.setStyleSheet(f'background:{CARD}; border:{CARD_BORDER_W}px solid {CARD_BORDER}; border-radius:12px;')
         self.opacity_effect = QGraphicsOpacityEffect(self)
         self.opacity_effect.setOpacity(1.0)
         self.setGraphicsEffect(self.opacity_effect)
@@ -1891,12 +1939,12 @@ class HomePage(PageBase):
         super().__init__(f'{APP_NAME} v{APP_VERSION}', 'Simple monitoring, polished visuals, and everything inside the same interface.')
         self.window = window
         self.history_wrap = QWidget()
-        self.history_wrap.setStyleSheet('background: transparent;')
+        self.history_wrap.setStyleSheet(transparent_row_style())
         self.history_layout = QVBoxLayout(self.history_wrap)
         self.history_layout.setContentsMargins(0, 0, 0, 0)
-        self.history_layout.setSpacing(6)
+        self.history_layout.setSpacing(PAGE_HISTORY_SPACING)
         self.history_label = QLabel('Last sent')
-        self.history_label.setStyleSheet(f"color:{TEXT}; font: 700 9px 'Segoe UI'; background: transparent; border: none;")
+        self.history_label.setStyleSheet(f"color:{TEXT}; font: {font_css(FONT_BASE, FONT_WEIGHT_BOLD)}; background: transparent; border: none;")
         self.history_layout.addWidget(self.history_label)
         self.thumb_strip = ThumbnailStrip(parent=self.history_wrap)
         self.history_layout.addWidget(self.thumb_strip, 0, Qt.AlignLeft)
@@ -1906,7 +1954,7 @@ class HomePage(PageBase):
         bottom = QHBoxLayout()
         bottom.setContentsMargins(0, 0, 0, 0)
         bottom.addStretch(1)
-        bottom.setSpacing(8)
+        bottom.setSpacing(PAGE_TOP_ROW_SPACING)
         self.pause_btn = self.window.make_small_button('Pause', self.window.toggle_monitoring, accent=BLUE)
         self.pause_btn.setMinimumWidth(BTN_MIN_W)
         bottom.addWidget(self.pause_btn)
@@ -1988,7 +2036,7 @@ class PostTemplatePage(PageBase):
 
         top_row = QHBoxLayout()
         top_row.setContentsMargins(0, 0, 0, 0)
-        top_row.setSpacing(8)
+        top_row.setSpacing(PAGE_TOP_ROW_SPACING)
         self.back_btn = self.window.make_secondary_button('← Back', self.back_to_settings)
         top_row.addWidget(self.back_btn)
         top_row.addStretch(1)
@@ -2003,9 +2051,9 @@ class PostTemplatePage(PageBase):
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.scroll.setStyleSheet(self.window.scrollbar_style('QScrollArea'))
         self.scroll_host = QWidget()
-        self.scroll_host.setStyleSheet('background: transparent;')
+        self.scroll_host.setStyleSheet(transparent_row_style())
         self.scroll_body = QVBoxLayout(self.scroll_host)
-        self.scroll_body.setContentsMargins(0, 0, 4, 0)
+        self.scroll_body.setContentsMargins(0, 0, PAGE_SCROLL_RIGHT_PADDING, 0)
         self.scroll_body.setSpacing(CARD_STACK_SPACING)
         self.scroll.setWidget(self.scroll_host)
         self.body.addWidget(self.scroll, 1)
@@ -2014,10 +2062,10 @@ class PostTemplatePage(PageBase):
         self.profile_card.setMinimumHeight(CARD_PROFILE_MIN_H)
         profile_row = QHBoxLayout()
         profile_row.setContentsMargins(0, 0, 0, 0)
-        profile_row.setSpacing(12)
+        profile_row.setSpacing(CARD_INNER_ROW_SPACING)
         self.avatar_preview = AvatarPreview(AVATAR_SIZE)
         self.avatar_preview.clicked.connect(self.choose_profile_image)
-        profile_row.addWidget(self.avatar_preview, 0, Qt.AlignVCenter)
+        profile_row.addWidget(self.avatar_preview, 0, ALIGN_VCENTER)
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText(APP_NAME)
         self.name_input.setFixedHeight(INPUT_H)
@@ -2028,21 +2076,21 @@ class PostTemplatePage(PageBase):
         self.clear_profile_btn = self.window.make_small_button('Clear', self.remove_profile_image)
         self.clear_profile_btn.setMinimumWidth(BTN_MIN_W)
         self.clear_profile_btn.setToolTip('Clear current image and custom name')
-        profile_row.addWidget(self.clear_profile_btn, 0, Qt.AlignVCenter)
+        profile_row.addWidget(self.clear_profile_btn, 0, ALIGN_VCENTER)
         self.profile_card.content_layout.addLayout(profile_row)
         self.scroll_body.addWidget(self.profile_card)
 
         embed_wrap = QWidget()
-        embed_wrap.setStyleSheet('background: transparent;')
+        embed_wrap.setStyleSheet(transparent_row_style())
         embed_layout = QHBoxLayout(embed_wrap)
         embed_layout.setContentsMargins(0, 0, 0, 0)
-        embed_layout.setSpacing(8)
+        embed_layout.setSpacing(EMBED_ROW_SPACING)
         self.color_btn = ColorSwatchButton(config.get('embed_color', DEFAULT_EMBED_COLOR))
         self.color_btn.clicked.connect(self.toggle_embed_color_popup)
-        embed_layout.addWidget(self.color_btn, 0, Qt.AlignVCenter)
+        embed_layout.addWidget(self.color_btn, 0, ALIGN_VCENTER)
         self.embed_toggle = ToggleSwitch(config.get('use_embed', False))
         self.embed_toggle.clicked.connect(self.toggle_embed)
-        embed_layout.addWidget(self.embed_toggle, 0, Qt.AlignVCenter)
+        embed_layout.addWidget(self.embed_toggle, 0, ALIGN_VCENTER)
         self.embed_card = SettingRow('Embed', 'Enable embed mode and choose the accent color that will be used on Discord.', embed_wrap)
         self.scroll_body.addWidget(self.embed_card)
 
@@ -2057,7 +2105,7 @@ class PostTemplatePage(PageBase):
         self.content_card.content_layout.addWidget(self.editor)
         self.help_label = QLabel('Variables: {filename}  •  {creation_str}  •  {upload_str}')
         self.help_label.setWordWrap(True)
-        self.help_label.setStyleSheet(f"color:{MUTED}; font: 500 8px 'Segoe UI';")
+        self.help_label.setStyleSheet(f"color:{MUTED}; font: {font_css(FONT_TINY, FONT_WEIGHT_MEDIUM)};")
         self.content_card.content_layout.addWidget(self.help_label)
         self.scroll_body.addWidget(self.content_card)
         self.scroll_body.addStretch(1)
@@ -2212,14 +2260,14 @@ class SettingRow(QFrame):
         left = QVBoxLayout()
         left.setSpacing(CARD_TEXT_SPACING)
         self.title_label = QLabel(title)
-        self.title_label.setStyleSheet(f"color:{TEXT}; font: 700 10px 'Segoe UI';")
+        self.title_label.setStyleSheet(f"color:{TEXT}; font: {font_css(FONT_MEDIUM, FONT_WEIGHT_BOLD)};")
         left.addWidget(self.title_label)
         self.subtitle_label = QLabel(subtitle)
         self.subtitle_label.setWordWrap(True)
-        self.subtitle_label.setStyleSheet(f"color:{MUTED}; font: 500 9px 'Segoe UI';")
+        self.subtitle_label.setStyleSheet(f"color:{MUTED}; font: {font_css(FONT_BASE, FONT_WEIGHT_MEDIUM)};")
         left.addWidget(self.subtitle_label)
         root.addLayout(left, 1)
-        root.addWidget(right_widget, 0, Qt.AlignVCenter)
+        root.addWidget(right_widget, 0, ALIGN_VCENTER)
 
     def set_subtitle(self, subtitle):
         self.subtitle_label.setText(subtitle)
@@ -2234,11 +2282,11 @@ class CardSection(QFrame):
         root.setContentsMargins(CARD_PADDING_X, CARD_PADDING_Y, CARD_PADDING_X, CARD_PADDING_Y)
         root.setSpacing(CARD_CONTENT_SPACING)
         self.title_label = QLabel(title)
-        self.title_label.setStyleSheet(f"color:{TEXT}; font: 700 10px 'Segoe UI';")
+        self.title_label.setStyleSheet(f"color:{TEXT}; font: {font_css(FONT_MEDIUM, FONT_WEIGHT_BOLD)};")
         root.addWidget(self.title_label)
         self.subtitle_label = QLabel(subtitle)
         self.subtitle_label.setWordWrap(True)
-        self.subtitle_label.setStyleSheet(f"color:{MUTED}; font: 500 9px 'Segoe UI';")
+        self.subtitle_label.setStyleSheet(f"color:{MUTED}; font: {font_css(FONT_BASE, FONT_WEIGHT_MEDIUM)};")
         root.addWidget(self.subtitle_label)
         self.content_layout = QVBoxLayout()
         self.content_layout.setContentsMargins(0, 0, 0, 0)
@@ -2261,15 +2309,15 @@ class SettingsPage(PageBase):
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.scroll.setStyleSheet(self.window.scrollbar_style('QScrollArea'))
         self.scroll_host = QWidget()
-        self.scroll_host.setStyleSheet('background: transparent;')
+        self.scroll_host.setStyleSheet(transparent_row_style())
         self.scroll_body = QVBoxLayout(self.scroll_host)
-        self.scroll_body.setContentsMargins(0, 0, 4, 0)
+        self.scroll_body.setContentsMargins(0, 0, PAGE_SCROLL_RIGHT_PADDING, 0)
         self.scroll_body.setSpacing(CARD_STACK_SPACING)
         self.scroll.setWidget(self.scroll_host)
         self.body.addWidget(self.scroll, 1)
 
         webhook_wrap = QWidget()
-        webhook_wrap.setStyleSheet('background: transparent;')
+        webhook_wrap.setStyleSheet(transparent_row_style())
         webhook_layout = QHBoxLayout(webhook_wrap)
         webhook_layout.setContentsMargins(0, 0, 0, 0)
         self.webhook_paste_btn = self.window.make_small_button('Paste', self.paste_webhook)
@@ -2278,7 +2326,7 @@ class SettingsPage(PageBase):
         self.scroll_body.addWidget(self.webhook_row)
 
         folder_wrap = QWidget()
-        folder_wrap.setStyleSheet('background: transparent;')
+        folder_wrap.setStyleSheet(transparent_row_style())
         folder_layout = QHBoxLayout(folder_wrap)
         folder_layout.setContentsMargins(0, 0, 0, 0)
         self.folder_browse_btn = self.window.make_small_button('Browse', self.browse_folder)
@@ -2290,7 +2338,7 @@ class SettingsPage(PageBase):
         self.delete_toggle.clicked.connect(self.toggle_delete_after_send)
         self.scroll_body.addWidget(SettingRow('Delete after send', 'On: moves the file to the Recycle Bin. Off: keeps the file and avoids duplicates through the log.', self.delete_toggle))
         clear_wrap = QWidget()
-        clear_wrap.setStyleSheet('background: transparent;')
+        clear_wrap.setStyleSheet(transparent_row_style())
         clear_layout = QHBoxLayout(clear_wrap)
         clear_layout.setContentsMargins(0, 0, 0, 0)
         self.clear_log_btn = self.window.make_small_button('Clear Log', self.clear_log, accent=YELLOW)
@@ -2300,30 +2348,30 @@ class SettingsPage(PageBase):
         self.start_toggle.clicked.connect(self.toggle_startup)
         self.scroll_body.addWidget(SettingRow('Start with Windows', 'Starts hidden in the system tray when Windows launches.', self.start_toggle))
         post_wrap = QWidget()
-        post_wrap.setStyleSheet('background: transparent;')
+        post_wrap.setStyleSheet(transparent_row_style())
         post_layout = QHBoxLayout(post_wrap)
         post_layout.setContentsMargins(0, 0, 0, 0)
         self.post_btn = self.window.make_small_button('Edit Post', self.window.open_post_template_page)
         post_layout.addWidget(self.post_btn)
         self.scroll_body.addWidget(SettingRow('Customize Post', 'Opens a page to edit the post text, webhook name, webhook image, and embed settings.', post_wrap))
         timer_wrap = QWidget()
-        timer_wrap.setStyleSheet('background: transparent;')
+        timer_wrap.setStyleSheet(transparent_row_style())
         timer_layout = QHBoxLayout(timer_wrap)
         timer_layout.setContentsMargins(0, 0, 0, 0)
-        timer_layout.setSpacing(6)
+        timer_layout.setSpacing(TIMER_ROW_SPACING)
         self.timer_input = QLineEdit()
         self.timer_input.setValidator(QIntValidator(1, 999999, self))
         self.timer_input.setAlignment(Qt.AlignCenter)
         self.timer_input.setFixedSize(TIMER_INPUT_W, INPUT_H)
         self.timer_input.setStyleSheet(self.window.compact_input_style())
         self.timer_input.editingFinished.connect(self.on_timer_input_finished)
-        timer_layout.addWidget(self.timer_input, 0, Qt.AlignVCenter)
+        timer_layout.addWidget(self.timer_input, 0, ALIGN_VCENTER)
         self.timer_toggle = ToggleSwitch(get_timer_enabled())
         self.timer_toggle.clicked.connect(self.toggle_timer)
-        timer_layout.addWidget(self.timer_toggle, 0, Qt.AlignVCenter)
+        timer_layout.addWidget(self.timer_toggle, 0, ALIGN_VCENTER)
         self.scroll_body.addWidget(SettingRow('Post Timer', 'Delay before sending new posts.', timer_wrap))
         open_wrap = QWidget()
-        open_wrap.setStyleSheet('background: transparent;')
+        open_wrap.setStyleSheet(transparent_row_style())
         open_layout = QHBoxLayout(open_wrap)
         open_layout.setContentsMargins(0, 0, 0, 0)
         self.open_cfg_btn = self.window.make_small_button('Open Folder', self.open_config_folder)
@@ -2485,19 +2533,20 @@ class MainWindow(QWidget):
         self.setBaseSize(WINDOW_WIDTH, WINDOW_HEIGHT)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(12, 12, 12, 12)
+        outer.setContentsMargins(WINDOW_OUTER_MARGIN, WINDOW_OUTER_MARGIN, WINDOW_OUTER_MARGIN, WINDOW_OUTER_MARGIN)
+        outer.setSpacing(0)
         self.panel = RoundedPanel()
         outer.addWidget(self.panel)
         root = QVBoxLayout(self.panel)
-        root.setContentsMargins(16, 14, 16, 12)
-        root.setSpacing(10)
+        root.setContentsMargins(WINDOW_PANEL_MARGIN_LEFT, WINDOW_PANEL_MARGIN_TOP, WINDOW_PANEL_MARGIN_RIGHT, WINDOW_PANEL_MARGIN_BOTTOM)
+        root.setSpacing(WINDOW_ROOT_SPACING)
         self.stack = CompactStackedWidget()
         self.stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         root.addWidget(self.stack, 1)
         self.message_label = QLabel('')
-        self.message_label.setMinimumHeight(16)
-        self.message_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.message_label.setStyleSheet(f"color:{MUTED}; font: 600 9px 'Segoe UI';")
+        self.message_label.setMinimumHeight(STATUS_LABEL_MIN_H)
+        self.message_label.setAlignment(ALIGN_LEFT_VCENTER)
+        self.message_label.setStyleSheet(f"color:{MUTED}; font: {font_css(FONT_BASE, FONT_WEIGHT_SEMIBOLD)};")
         root.addWidget(self.message_label)
         self.home_page = HomePage(self)
         self.settings_page = SettingsPage(self)
@@ -2525,7 +2574,7 @@ class MainWindow(QWidget):
             border-radius: {INPUT_RADIUS}px;
             padding: 0 12px;
             min-height: {INPUT_H}px;
-            font: 600 9px 'Segoe UI';
+            font: {font_css(FONT_BASE, FONT_WEIGHT_SEMIBOLD)};
         }}
         QLineEdit:focus {{ border: {BTN_BORDER}px solid {BLUE}; }}
         QLineEdit::placeholder {{ color: #6f7580; }}
@@ -2534,13 +2583,13 @@ class MainWindow(QWidget):
         return f'\n        {selector} {{\n            background: transparent;\n            border: none;\n        }}\n        QScrollBar:vertical {{\n            background: transparent;\n            border: none;\n            width: 8px;\n            margin: 6px 0 6px 0;\n        }}\n        QScrollBar::handle:vertical {{\n            background: #2a2d34;\n            border: none;\n            border-radius: 4px;\n            min-height: 24px;\n        }}\n        QScrollBar::handle:vertical:hover {{\n            background: #343944;\n        }}\n        QScrollBar::handle:vertical:pressed {{\n            background: #3d4451;\n        }}\n        QScrollBar::add-line:vertical,\n        QScrollBar::sub-line:vertical {{\n            height: 0px;\n            background: transparent;\n            border: none;\n        }}\n        QScrollBar::add-page:vertical,\n        QScrollBar::sub-page:vertical {{\n            background: transparent;\n            border: none;\n        }}\n        QScrollBar:horizontal {{\n            background: transparent;\n            border: none;\n            height: 0px;\n            margin: 0;\n        }}\n        QScrollBar::handle:horizontal,\n        QScrollBar::add-line:horizontal,\n        QScrollBar::sub-line:horizontal,\n        QScrollBar::add-page:horizontal,\n        QScrollBar::sub-page:horizontal {{\n            background: transparent;\n            border: none;\n            width: 0px;\n        }}\n        '
 
     def text_edit_style(self):
-        return f"\n        QTextEdit {{\n            background: {FIELD_BG};\n            color: {FIELD_TEXT};\n            border: 1px solid #2c3038;\n            border-radius: {BTN_RADIUS}px;\n            padding: 10px 12px;\n            font: 600 9px 'Segoe UI';\n        }}\n        QTextEdit:focus {{ border: {BTN_BORDER}px solid {BLUE}; }}\n        {self.scrollbar_style('QTextEdit')}\n        "
+        return f"\n        QTextEdit {{\n            background: {FIELD_BG};\n            color: {FIELD_TEXT};\n            border: 1px solid #2c3038;\n            border-radius: {BTN_RADIUS}px;\n            padding: 10px 12px;\n            font: {font_css(FONT_BASE, FONT_WEIGHT_SEMIBOLD)};\n        }}\n        QTextEdit:focus {{ border: {BTN_BORDER}px solid {BLUE}; }}\n        {self.scrollbar_style('QTextEdit')}\n        "
 
     def post_editor_style(self):
-        return f"\n        QTextEdit {{\n            background: {FIELD_BG};\n            color: {FIELD_TEXT};\n            border: 1px solid #2c3038;\n            border-radius: {BTN_RADIUS}px;\n            padding: {POST_EDITOR_PAD_Y}px {POST_EDITOR_PAD_X}px;\n            font: 600 9px 'Segoe UI';\n        }}\n        QTextEdit:focus {{ border: {BTN_BORDER}px solid {BLUE}; }}\n        "
+        return f"\n        QTextEdit {{\n            background: {FIELD_BG};\n            color: {FIELD_TEXT};\n            border: 1px solid #2c3038;\n            border-radius: {BTN_RADIUS}px;\n            padding: {POST_EDITOR_PAD_Y}px {POST_EDITOR_PAD_X}px;\n            font: {font_css(FONT_BASE, FONT_WEIGHT_SEMIBOLD)};\n        }}\n        QTextEdit:focus {{ border: {BTN_BORDER}px solid {BLUE}; }}\n        "
 
     def preview_name_style(self):
-        return f"\n        QLineEdit {{\n            background: transparent;\n            color: {FIELD_TEXT};\n            border: none;\n            padding: 0 2px;\n            font: 700 10px 'Segoe UI';\n        }}\n        QLineEdit:focus {{\n            border: none;\n        }}\n        QLineEdit::placeholder {{\n            color: {FIELD_TEXT};\n        }}\n        "
+        return f"\n        QLineEdit {{\n            background: transparent;\n            color: {FIELD_TEXT};\n            border: none;\n            padding: 0 2px;\n            font: {font_css(FONT_MEDIUM, FONT_WEIGHT_BOLD)};\n        }}\n        QLineEdit:focus {{\n            border: none;\n        }}\n        QLineEdit::placeholder {{\n            color: {FIELD_TEXT};\n        }}\n        "
 
     def compact_input_style(self):
         return f"""
@@ -2551,7 +2600,7 @@ class MainWindow(QWidget):
             border-radius: {INPUT_RADIUS}px;
             padding: 0 8px;
             min-height: {INPUT_H}px;
-            font: 700 9px 'Segoe UI';
+            font: {font_css(FONT_BASE, FONT_WEIGHT_BOLD)};
         }}
         QLineEdit:focus {{ border: {BTN_BORDER}px solid {BLUE}; }}
         QLineEdit::placeholder {{ color: #6f7580; }}
@@ -2569,7 +2618,7 @@ class MainWindow(QWidget):
                 border: {BTN_BORDER}px solid {BLUE};
                 border-radius: {BTN_RADIUS}px;
                 padding: 0 12px;
-                font: 700 9px 'Segoe UI';
+                font: {font_css(FONT_BASE, FONT_WEIGHT_BOLD)};
             }}
             QPushButton:hover {{ background: {BLUE}; }}
             QPushButton:pressed {{ background: {BLUE}; }}
@@ -2588,14 +2637,14 @@ class MainWindow(QWidget):
                 border: {BTN_BORDER}px solid #30343d;
                 border-radius: {BTN_RADIUS}px;
                 padding: 0 12px;
-                font: 700 9px 'Segoe UI';
+                font: {font_css(FONT_BASE, FONT_WEIGHT_BOLD)};
             }}
             QPushButton:hover {{ background: #2b3038; }}
             QPushButton:pressed {{ background: #20242b; }}
             """)
         return btn
     def round_icon_button_style(self):
-        return f"\n        QPushButton {{\n            background: #24272d;\n            color: {TEXT};\n            border: {BTN_BORDER}px solid #30343d;\n            border-radius: {BTN_RADIUS}px;\n            padding: 0;\n            font: 700 13px 'Segoe UI Emoji';\n        }}\n        QPushButton:hover {{ background: #2b3038; }}\n        "
+        return f"\n        QPushButton {{\n            background: #24272d;\n            color: {TEXT};\n            border: {BTN_BORDER}px solid #30343d;\n            border-radius: {BTN_RADIUS}px;\n            padding: 0;\n            font: {font_css(13, FONT_WEIGHT_BOLD, FONT_FAMILY_EMOJI)};\n        }}\n        QPushButton:hover {{ background: #2b3038; }}\n        "
 
     def small_button_style(self, enabled=True, accent=BLUE, hover=None, text_color=None):
         if enabled:
@@ -2621,7 +2670,7 @@ class MainWindow(QWidget):
             border: {BTN_BORDER}px solid {border};
             border-radius: {BTN_RADIUS}px;
             padding: 0 12px;
-            font: 700 9px 'Segoe UI';
+            font: {font_css(FONT_BASE, FONT_WEIGHT_BOLD)};
         }}
         QPushButton:hover {{ background: {hover}; }}
         QPushButton:pressed {{ background: {hover}; }}
@@ -2639,7 +2688,7 @@ class MainWindow(QWidget):
         label = QLabel('')
         label.setWordWrap(True)
         label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        label.setStyleSheet(f"color:{TEXT}; font: 600 9px 'Segoe UI'; background: transparent; border: none;")
+        label.setStyleSheet(f"color:{TEXT}; font: {font_css(FONT_BASE, FONT_WEIGHT_SEMIBOLD)}; background: transparent; border: none;")
         return label
 
     def refresh_all(self):
@@ -2681,7 +2730,7 @@ class MainWindow(QWidget):
 
     def show_message(self, kind, text):
         colors = {'success': GREEN, 'error': RED, 'warning': YELLOW, 'info': MUTED}
-        self.message_label.setStyleSheet(f"color:{colors.get(kind, MUTED)}; font: 700 9px 'Segoe UI';")
+        self.message_label.setStyleSheet(f"color:{colors.get(kind, MUTED)}; font: {font_css(FONT_BASE, FONT_WEIGHT_BOLD)};")
         self.message_label.setText(text)
         self.message_timer.start(4200)
 
@@ -2826,7 +2875,7 @@ class TrayExitBubble(QWidget):
         self.exit_btn.setCursor(Qt.PointingHandCursor)
         self.exit_btn.clicked.connect(self.handle_exit)
         self.exit_btn.setMinimumSize(BTN_MIN_W, BTN_H)
-        self.exit_btn.setStyleSheet(f"\n            QPushButton {{\n                background: #24272d;\n                color: {TEXT};\n                border: {BTN_BORDER}px solid #30343d;\n                border-radius: {BTN_RADIUS}px;\n                font: 700 9px 'Segoe UI';\n                padding: 0 12px;\n                text-align: center;\n            }}\n            QPushButton:hover {{\n                background: #2b3038;\n            }}\n            QPushButton:pressed {{\n                background: #20242b;\n            }}\n        ")
+        self.exit_btn.setStyleSheet(f"\n            QPushButton {{\n                background: #24272d;\n                color: {TEXT};\n                border: {BTN_BORDER}px solid #30343d;\n                border-radius: {BTN_RADIUS}px;\n                font: {font_css(FONT_BASE, FONT_WEIGHT_BOLD)};\n                padding: 0 12px;\n                text-align: center;\n            }}\n            QPushButton:hover {{\n                background: #2b3038;\n            }}\n            QPushButton:pressed {{\n                background: #20242b;\n            }}\n        ")
         outer.addWidget(self.exit_btn)
         self.hide()
 
