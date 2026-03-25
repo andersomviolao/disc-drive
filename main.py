@@ -32,7 +32,7 @@ except Exception:
     winreg = None
 APP_NAME = 'disc-drive'
 APP_DIR_NAME = 'disc-drive'
-APP_VERSION = '3.0.52'
+APP_VERSION = '3.0.53'
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -1956,32 +1956,24 @@ class ThumbnailStrip(QWidget):
             return 0
         return self.tile_size * row_count + self.row_spacing * max(0, row_count - 1)
 
-    def _layout_metrics_for_row(self, row_item_count: int) -> tuple[float, float]:
-        available_width = max(self.width(), row_item_count * self.tile_size)
-        if row_item_count <= 0:
-            return 0.0, 0.0
-        if row_item_count == 1:
-            start_x = max(0.0, (available_width - self.tile_size) / 2.0)
-            return start_x, 0.0
-        spacing = max(self.min_spacing, (available_width - (row_item_count * self.tile_size)) / float(row_item_count - 1))
-        row_width = row_item_count * self.tile_size + (row_item_count - 1) * spacing
-        start_x = max(0.0, (available_width - row_width) / 2.0)
-        return start_x, spacing
+    def _slot_spacing(self) -> float:
+        slot_count = max(1, self.max_columns)
+        available_width = max(self.width(), slot_count * self.tile_size)
+        if slot_count <= 1:
+            return 0.0
+        return max(self.min_spacing, (available_width - (slot_count * self.tile_size)) / float(slot_count - 1))
 
     def slot_pos(self, index: int, total_items: int | None=None) -> QPoint:
         if total_items is None:
             total_items = len(self.visible_tiles)
-        row_counts = self._row_counts(total_items)
-        remaining = index
-        row = 0
-        for row, count in enumerate(row_counts):
-            if remaining < count:
-                start_x, spacing = self._layout_metrics_for_row(count)
-                x = start_x + remaining * (self.tile_size + spacing)
-                y = row * (self.tile_size + self.row_spacing)
-                return QPoint(int(round(x)), int(round(y)))
-            remaining -= count
-        return QPoint(0, 0)
+        if total_items <= 0:
+            return QPoint(0, 0)
+        spacing = self._slot_spacing()
+        row = index // self.max_columns
+        column = index % self.max_columns
+        x = column * (self.tile_size + spacing)
+        y = row * (self.tile_size + self.row_spacing)
+        return QPoint(int(round(x)), int(round(y)))
 
     def _apply_geometry(self, total_items: int):
         target_height = self._height_for_count(total_items)
