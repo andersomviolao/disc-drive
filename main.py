@@ -32,7 +32,7 @@ except Exception:
     winreg = None
 APP_NAME = 'disc-drive'
 APP_DIR_NAME = 'disc-drive'
-APP_VERSION = '3.0.49'
+APP_VERSION = '3.0.50'
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -99,6 +99,7 @@ PAGE_SECTION_SPACING = 10
 PAGE_SCROLL_CONTENT_RIGHT_PADDING = 0
 PAGE_SCROLLBAR_GAP = 2
 SCROLLBAR_RIGHT_INSET = 0
+SCROLLBAR_EXTERNAL_OFFSET = 6
 PAGE_HISTORY_SPACING = 6
 
 CARD_INNER_ROW_SPACING = 12
@@ -1798,9 +1799,27 @@ class ExternalScrollPane(QWidget):
     def scroll_to_top(self):
         self.scrollbar.setValue(0)
 
+    def scrollbar_parent(self):
+        return self.parentWidget() or self
+
+    def ensure_scrollbar_parent(self):
+        target_parent = self.scrollbar_parent()
+        if self.scrollbar.parentWidget() is target_parent:
+            return target_parent
+        visible = self.scrollbar.isVisible()
+        self.scrollbar.setParent(target_parent)
+        self.scrollbar.setStyleSheet(self.window.scrollbar_style('QScrollBar'))
+        self.scrollbar.setCursor(Qt.PointingHandCursor)
+        self.scrollbar.setFixedWidth(SCROLLBAR_WIDTH)
+        self.scrollbar.setVisible(visible)
+        self.scrollbar.raise_()
+        return target_parent
+
     def update_scrollbar_geometry(self):
-        x = max(0, self.width() - SCROLLBAR_WIDTH - SCROLLBAR_RIGHT_INSET)
-        y = SCROLLBAR_MARGIN_TOP
+        target_parent = self.ensure_scrollbar_parent()
+        top_left = self.mapTo(target_parent, QPoint(0, 0)) if target_parent is not self else QPoint(0, 0)
+        x = top_left.x() + self.width() - SCROLLBAR_WIDTH - SCROLLBAR_RIGHT_INSET + SCROLLBAR_EXTERNAL_OFFSET
+        y = top_left.y() + SCROLLBAR_MARGIN_TOP
         h = max(0, self.height() - SCROLLBAR_MARGIN_TOP - SCROLLBAR_MARGIN_BOTTOM)
         self.scrollbar.setGeometry(x, y, SCROLLBAR_WIDTH, h)
         self.scrollbar.raise_()
@@ -1809,9 +1828,18 @@ class ExternalScrollPane(QWidget):
         super().resizeEvent(event)
         self.update_scrollbar_geometry()
 
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        self.update_scrollbar_geometry()
+
     def showEvent(self, event):
         super().showEvent(event)
+        self.scrollbar.setVisible(self.scroll.verticalScrollBar().maximum() > self.scroll.verticalScrollBar().minimum())
         QTimer.singleShot(0, self.update_scrollbar_geometry)
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self.scrollbar.hide()
 
     def refresh_scrollbar(self):
         internal_bar = self.scroll.verticalScrollBar()
@@ -1826,7 +1854,7 @@ class ExternalScrollPane(QWidget):
         self.scrollbar.setPageStep(internal_bar.pageStep())
         self.scrollbar.setSingleStep(internal_bar.singleStep())
         self.scrollbar.blockSignals(False)
-        self.scrollbar.setVisible(maximum > minimum)
+        self.scrollbar.setVisible(self.isVisible() and (maximum > minimum))
         self.update_scrollbar_geometry()
 
     def sync_from_internal_value(self, value):
@@ -1836,7 +1864,7 @@ class ExternalScrollPane(QWidget):
         self.scrollbar.setPageStep(internal_bar.pageStep())
         self.scrollbar.setSingleStep(internal_bar.singleStep())
         self.scrollbar.blockSignals(False)
-        self.scrollbar.setVisible(internal_bar.maximum() > internal_bar.minimum())
+        self.scrollbar.setVisible(self.isVisible() and (internal_bar.maximum() > internal_bar.minimum()))
         self.update_scrollbar_geometry()
 
     def sync_to_internal_value(self, value):
