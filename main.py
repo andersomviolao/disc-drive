@@ -1930,99 +1930,6 @@ class HomePage(PageBase):
             self.pause_btn.setStyleSheet(self.window.small_button_style(enabled=True, accent=YELLOW, hover='#ffca52', text_color='#1e1a10'))
             self.pause_btn.setToolTip('Resume monitoring')
 
-class WebhookPage(PageBase):
-
-    def __init__(self, window):
-        super().__init__('Edit Webhook', 'Type or paste the full Discord webhook URL.')
-        self.window = window
-        self.body.addSpacing(8)
-        self.input = QLineEdit()
-        self.input.setPlaceholderText('https://discord.com/api/webhooks/...')
-        self.input.setMinimumHeight(38)
-        self.input.setStyleSheet(self.window.input_style())
-        self.body.addWidget(self.input)
-        buttons = QHBoxLayout()
-        self.back_btn = self.window.make_secondary_button('← Back', self.window.go_home)
-        self.save_btn = self.window.make_primary_button('Save', self.save)
-        buttons.addWidget(self.back_btn)
-        buttons.addStretch(1)
-        buttons.addWidget(self.save_btn)
-        self.body.addLayout(buttons)
-        self.body.addStretch(1)
-
-    def refresh(self):
-        self.input.setText(config.get('webhook', ''))
-        self.input.setFocus()
-        self.input.selectAll()
-
-    def save(self):
-        text = self.input.text().strip()
-        if not is_valid_webhook(text):
-            self.window.show_message('error', 'Paste a valid webhook URL.')
-            return
-        previous_webhook = str(config.get('webhook', '') or '').strip()
-        webhook_changed = previous_webhook != text
-        config['webhook'] = text
-        if webhook_changed:
-            delete_avatar_file(AVATAR_IMAGE_FILE)
-            config['webhook_default_source'] = ''
-            config['avatar_mode'] = AVATAR_MODE_WEBHOOK
-        reset_avatar_sync_cache()
-        save_config()
-        refresh_avatar_state(text, force_fetch=webhook_changed or get_avatar_mode() == AVATAR_MODE_WEBHOOK, sync_remote=True)
-        self.window.show_message('success', 'Webhook updated.')
-        self.window.go_home()
-
-class FolderPage(PageBase):
-
-    def __init__(self, window):
-        super().__init__('Edit Watched Folder', 'Choose the folder through the Windows browser instead of typing the path manually.')
-        self.window = window
-        self.body.addSpacing(8)
-        row = QHBoxLayout()
-        row.setSpacing(10)
-        self.input = QLineEdit()
-        self.input.setPlaceholderText('No folder selected')
-        self.input.setMinimumHeight(38)
-        self.input.setReadOnly(True)
-        self.input.setStyleSheet(self.window.input_style())
-        row.addWidget(self.input, 1)
-        self.browse_btn = self.window.make_secondary_button('Browse', self.browse_folder)
-        self.browse_btn.setMinimumHeight(38)
-        row.addWidget(self.browse_btn)
-        self.body.addLayout(row)
-        buttons = QHBoxLayout()
-        self.back_btn = self.window.make_secondary_button('← Back', self.window.go_home)
-        self.save_btn = self.window.make_primary_button('Save', self.save)
-        buttons.addWidget(self.back_btn)
-        buttons.addStretch(1)
-        buttons.addWidget(self.save_btn)
-        self.body.addLayout(buttons)
-        self.body.addStretch(1)
-
-    def refresh(self):
-        self.input.setText(config.get('folder', ''))
-
-    def browse_folder(self):
-        current = config.get('folder', '') or str(Path.home())
-        selected = QFileDialog.getExistingDirectory(self.window, 'Select Watched Folder', current, QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks)
-        if selected:
-            self.input.setText(selected)
-
-    def save(self):
-        text = self.input.text().strip().strip('"')
-        if not text:
-            self.window.show_message('error', 'Select a valid folder.')
-            return
-        path = Path(text)
-        if not path.exists() or not path.is_dir():
-            self.window.show_message('error', 'The selected folder does not exist.')
-            return
-        config['folder'] = str(path)
-        save_config()
-        self.window.show_message('success', 'Watched folder updated.')
-        self.window.go_home()
-
 class PostTemplatePage(PageBase):
 
     def __init__(self, window):
@@ -2317,7 +2224,7 @@ class SettingsPage(PageBase):
         self.timer_toggle = ToggleSwitch(get_timer_enabled())
         self.timer_toggle.clicked.connect(self.toggle_timer)
         timer_layout.addWidget(self.timer_toggle, 0, Qt.AlignVCenter)
-        self.scroll_body.addWidget(SettingRow('Post Timer', 'Off: sends instantly. On: waits the configured number of minutes before sending new posts.', timer_wrap))
+        self.scroll_body.addWidget(SettingRow('Post Timer', 'Delay before sending new posts.', timer_wrap))
         open_wrap = QWidget()
         open_wrap.setStyleSheet('background: transparent;')
         open_layout = QHBoxLayout(open_wrap)
@@ -2496,11 +2403,9 @@ class MainWindow(QWidget):
         self.message_label.setStyleSheet(f"color:{MUTED}; font: 600 9px 'Segoe UI';")
         root.addWidget(self.message_label)
         self.home_page = HomePage(self)
-        self.webhook_page = WebhookPage(self)
-        self.folder_page = FolderPage(self)
         self.settings_page = SettingsPage(self)
         self.post_template_page = PostTemplatePage(self)
-        for page in [self.home_page, self.webhook_page, self.folder_page, self.settings_page, self.post_template_page]:
+        for page in [self.home_page, self.settings_page, self.post_template_page]:
             page.setMinimumSize(0, 0)
             page.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             self.stack.addWidget(page)
@@ -2606,11 +2511,6 @@ class MainWindow(QWidget):
     def go_home(self, animated=True):
         self.switch_page(self.home_page, animated)
 
-    def open_webhook_page(self):
-        self.switch_page(self.webhook_page)
-
-    def open_folder_page(self):
-        self.switch_page(self.folder_page)
 
     def open_settings_page(self):
         self.switch_page(self.settings_page)
@@ -2915,12 +2815,8 @@ class TrayController(QObject):
         QApplication.quit()
 
 def ensure_first_run(window: MainWindow):
-    if not config.get('webhook'):
-        window.open_webhook_page()
-        window.show_near_tray()
-        return
-    if not config.get('folder'):
-        window.open_folder_page()
+    if not config.get('webhook') or not config.get('folder'):
+        window.open_settings_page()
         window.show_near_tray()
         return
 if __name__ == '__main__':
