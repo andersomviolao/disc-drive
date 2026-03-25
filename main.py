@@ -32,7 +32,7 @@ except Exception:
     winreg = None
 APP_NAME = 'disc-drive'
 APP_DIR_NAME = 'disc-drive'
-APP_VERSION = '3.0.45'
+APP_VERSION = '3.0.46'
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -44,7 +44,10 @@ BTN_RADIUS = BTN_H // 2
 INPUT_H = 28
 TIMER_INPUT_W = 42
 HEX_INPUT_H = 28
-POST_EDITOR_MIN_H = 80
+POST_EDITOR_MIN_LINES = 1
+POST_EDITOR_PAD_X = 12
+POST_EDITOR_PAD_Y = 10
+POST_EDITOR_FRAME_EXTRA = 2
 INPUT_BORDER = 1
 INPUT_RADIUS = INPUT_H // 2
 
@@ -128,7 +131,7 @@ CARD_STACK_SPACING = 10
 CARD_TEXT_SPACING = 2
 CARD_CONTENT_SPACING = 10
 CARD_PROFILE_MIN_H = 108
-CARD_POST_CONTENT_MIN_H = 184
+CARD_POST_CONTENT_MIN_H = 0
 DEFAULT_EMBED_COLOR = BLUE
 FONT_TINY = 8
 FONT_BASE = 9
@@ -1940,6 +1943,41 @@ class HomePage(PageBase):
             self.pause_btn.setStyleSheet(self.window.small_button_style(enabled=True, accent=YELLOW, hover='#ffca52', text_color='#1e1a10'))
             self.pause_btn.setToolTip('Resume monitoring')
 
+class AutoHeightTextEdit(QTextEdit):
+
+    heightChanged = Signal(int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAcceptRichText(False)
+        self.setLineWrapMode(QTextEdit.WidgetWidth)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.document().setDocumentMargin(0)
+        self.document().documentLayout().documentSizeChanged.connect(self.update_dynamic_height)
+
+    def _target_height(self) -> int:
+        line_height = self.fontMetrics().lineSpacing()
+        document_height = math.ceil(self.document().documentLayout().documentSize().height())
+        content_height = max(line_height, document_height)
+        return int(content_height + POST_EDITOR_PAD_Y * 2 + POST_EDITOR_FRAME_EXTRA)
+
+    def update_dynamic_height(self):
+        target = self._target_height()
+        if self.height() != target:
+            self.setFixedHeight(target)
+            self.heightChanged.emit(target)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        QTimer.singleShot(0, self.update_dynamic_height)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        QTimer.singleShot(0, self.update_dynamic_height)
+
+
 class PostTemplatePage(PageBase):
 
     def __init__(self, window):
@@ -2010,13 +2048,13 @@ class PostTemplatePage(PageBase):
 
         self.content_card = CardSection('Post Content', 'Edit the message template that will be sent together with the file.')
         self.content_card.setMinimumHeight(CARD_POST_CONTENT_MIN_H)
-        self.editor = QTextEdit()
+        self.content_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        self.editor = AutoHeightTextEdit()
         self.editor.setPlaceholderText('Type the post content here...')
         self.editor.setStyleSheet(self.window.post_editor_style())
         self.editor.textChanged.connect(self.on_editor_text_changed)
-        self.editor.setMinimumHeight(POST_EDITOR_MIN_H)
-        self.editor.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.content_card.content_layout.addWidget(self.editor, 1)
+        self.editor.heightChanged.connect(self.on_editor_height_changed)
+        self.content_card.content_layout.addWidget(self.editor)
         self.help_label = QLabel('Variables: {filename}  •  {creation_str}  •  {upload_str}')
         self.help_label.setWordWrap(True)
         self.help_label.setStyleSheet(f"color:{MUTED}; font: 500 8px 'Segoe UI';")
@@ -2043,6 +2081,7 @@ class PostTemplatePage(PageBase):
     def refresh(self):
         self._loading = True
         self.editor.setPlainText(load_template())
+        self.editor.update_dynamic_height()
         self.name_input.setText(get_custom_webhook_name())
         self.update_profile_preview()
         self.embed_toggle.setChecked(bool(config.get('use_embed', False)))
@@ -2064,6 +2103,10 @@ class PostTemplatePage(PageBase):
         if self._loading:
             return
         self.save_template(show_feedback=False)
+
+    def on_editor_height_changed(self, _height):
+        self.content_card.updateGeometry()
+        self.scroll_host.adjustSize()
 
     def on_name_text_changed(self):
         if self._loading:
@@ -2494,7 +2537,7 @@ class MainWindow(QWidget):
         return f"\n        QTextEdit {{\n            background: {FIELD_BG};\n            color: {FIELD_TEXT};\n            border: 1px solid #2c3038;\n            border-radius: {BTN_RADIUS}px;\n            padding: 10px 12px;\n            font: 600 9px 'Segoe UI';\n        }}\n        QTextEdit:focus {{ border: {BTN_BORDER}px solid {BLUE}; }}\n        {self.scrollbar_style('QTextEdit')}\n        "
 
     def post_editor_style(self):
-        return f"\n        QTextEdit {{\n            background: {FIELD_BG};\n            color: {FIELD_TEXT};\n            border: 1px solid #2c3038;\n            border-radius: {BTN_RADIUS}px;\n            padding: 10px 12px;\n            font: 600 9px 'Segoe UI';\n        }}\n        QTextEdit:focus {{ border: {BTN_BORDER}px solid {BLUE}; }}\n        {self.scrollbar_style('QTextEdit')}\n        "
+        return f"\n        QTextEdit {{\n            background: {FIELD_BG};\n            color: {FIELD_TEXT};\n            border: 1px solid #2c3038;\n            border-radius: {BTN_RADIUS}px;\n            padding: {POST_EDITOR_PAD_Y}px {POST_EDITOR_PAD_X}px;\n            font: 600 9px 'Segoe UI';\n        }}\n        QTextEdit:focus {{ border: {BTN_BORDER}px solid {BLUE}; }}\n        "
 
     def preview_name_style(self):
         return f"\n        QLineEdit {{\n            background: transparent;\n            color: {FIELD_TEXT};\n            border: none;\n            padding: 0 2px;\n            font: 700 10px 'Segoe UI';\n        }}\n        QLineEdit:focus {{\n            border: none;\n        }}\n        QLineEdit::placeholder {{\n            color: {FIELD_TEXT};\n        }}\n        "
