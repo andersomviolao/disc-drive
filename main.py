@@ -1847,7 +1847,7 @@ class HomePage(PageBase):
         self.cfg_btn.setCursor(Qt.PointingHandCursor)
         self.cfg_btn.clicked.connect(self.window.open_settings_page)
         self.cfg_btn.setToolTip('Settings')
-        self.cfg_btn.setFixedSize(32, 32)
+        self.cfg_btn.setFixedSize(34, 34)
         self.cfg_btn.setStyleSheet(self.window.round_icon_button_style())
         bottom.addWidget(self.cfg_btn)
         self.body.addLayout(bottom)
@@ -1912,7 +1912,7 @@ class PostTemplatePage(PageBase):
         self.body.addWidget(self.scroll, 1)
 
         self.profile_card = CardSection('Webhook Profile', 'Choose the avatar, set the webhook name, or clear the current custom data.')
-        self.profile_card.setMinimumHeight(104)
+        self.profile_card.setMinimumHeight(108)
         profile_row = QHBoxLayout()
         profile_row.setContentsMargins(0, 0, 0, 0)
         profile_row.setSpacing(12)
@@ -1921,7 +1921,7 @@ class PostTemplatePage(PageBase):
         profile_row.addWidget(self.avatar_preview, 0, Qt.AlignVCenter)
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText(APP_NAME)
-        self.name_input.setMinimumHeight(38)
+        self.name_input.setFixedHeight(32)
         self.name_input.setStyleSheet(self.window.input_style())
         self.name_input.editingFinished.connect(self.on_name_editing_finished)
         self.name_input.textChanged.connect(self.on_name_text_changed)
@@ -1933,28 +1933,27 @@ class PostTemplatePage(PageBase):
         self.profile_card.content_layout.addLayout(profile_row)
         self.scroll_body.addWidget(self.profile_card)
 
-        self.embed_card = CardSection('Embed', 'Enable embed mode and choose the accent color that will be used on Discord.')
-        self.embed_card.setMinimumHeight(86)
-        embed_row = QHBoxLayout()
-        embed_row.setContentsMargins(0, 4, 0, 0)
-        embed_row.setSpacing(8)
-        embed_row.addStretch(1)
+        embed_wrap = QWidget()
+        embed_wrap.setStyleSheet('background: transparent;')
+        embed_layout = QHBoxLayout(embed_wrap)
+        embed_layout.setContentsMargins(0, 0, 0, 0)
+        embed_layout.setSpacing(8)
         self.color_btn = ColorSwatchButton(config.get('embed_color', DEFAULT_EMBED_COLOR))
         self.color_btn.clicked.connect(self.toggle_embed_color_popup)
-        embed_row.addWidget(self.color_btn, 0, Qt.AlignVCenter)
+        embed_layout.addWidget(self.color_btn, 0, Qt.AlignVCenter)
         self.embed_toggle = ToggleSwitch(config.get('use_embed', False))
         self.embed_toggle.clicked.connect(self.toggle_embed)
-        embed_row.addWidget(self.embed_toggle, 0, Qt.AlignVCenter)
-        self.embed_card.content_layout.addLayout(embed_row)
+        embed_layout.addWidget(self.embed_toggle, 0, Qt.AlignVCenter)
+        self.embed_card = SettingRow('Embed', 'Enable embed mode and choose the accent color that will be used on Discord.', embed_wrap)
         self.scroll_body.addWidget(self.embed_card)
 
         self.content_card = CardSection('Post Content', 'Edit the message template that will be sent together with the file.')
-        self.content_card.setMinimumHeight(232)
+        self.content_card.setMinimumHeight(184)
         self.editor = QTextEdit()
         self.editor.setPlaceholderText('Type the post content here...')
         self.editor.setStyleSheet(self.window.post_editor_style())
         self.editor.textChanged.connect(self.on_editor_text_changed)
-        self.editor.setMinimumHeight(166)
+        self.editor.setMinimumHeight(118)
         self.editor.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.content_card.content_layout.addWidget(self.editor, 1)
         self.help_label = QLabel('Variables: {filename}  •  {creation_str}  •  {upload_str}')
@@ -1973,12 +1972,6 @@ class PostTemplatePage(PageBase):
     def update_profile_preview(self):
         avatar_file = get_effective_avatar_file()
         self.avatar_preview.set_image_path(str(avatar_file) if avatar_file is not None else None)
-        current_avatar_is_default = False
-        if avatar_file is not None:
-            try:
-                current_avatar_is_default = Path(avatar_file).resolve() == DEFAULT_PLACEHOLDER_IMAGE_FILE.resolve()
-            except Exception:
-                current_avatar_is_default = str(avatar_file) == str(DEFAULT_PLACEHOLDER_IMAGE_FILE)
         has_custom_name = bool((self.name_input.text() or '').strip()) or bool(get_custom_webhook_name())
         has_clearable_avatar = get_avatar_mode() != AVATAR_MODE_DEFAULT
         has_custom_state = has_clearable_avatar or has_custom_name
@@ -2009,6 +2002,7 @@ class PostTemplatePage(PageBase):
     def on_editor_text_changed(self):
         if self._loading:
             return
+        self.save_template(show_feedback=False)
 
     def on_name_text_changed(self):
         if self._loading:
@@ -2451,7 +2445,7 @@ class MainWindow(QWidget):
         return btn
 
     def round_icon_button_style(self):
-        return f"\n        QPushButton {{\n            background: #24272d;\n            color: {TEXT};\n            border: 1px solid #30343d;\n            border-radius: 16px;\n            padding: 0;\n            font: 700 13px 'Segoe UI Emoji';\n        }}\n        QPushButton:hover {{ background: #2b3038; }}\n        "
+        return f"\n        QPushButton {{\n            background: #24272d;\n            color: {TEXT};\n            border: 1px solid #30343d;\n            border-radius: 17px;\n            padding: 0;\n            font: 700 13px 'Segoe UI Emoji';\n        }}\n        QPushButton:hover {{ background: #2b3038; }}\n        "
 
     def small_button_style(self, enabled=True, accent=BLUE, hover=None, text_color=None):
         if enabled:
