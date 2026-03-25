@@ -32,7 +32,7 @@ except Exception:
     winreg = None
 APP_NAME = 'disc-drive'
 APP_DIR_NAME = 'disc-drive'
-APP_VERSION = '3.0.48'
+APP_VERSION = '3.0.49'
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -97,7 +97,8 @@ PAGE_HEADER_SPACING = 1
 PAGE_TOP_ROW_SPACING = 8
 PAGE_SECTION_SPACING = 10
 PAGE_SCROLL_CONTENT_RIGHT_PADDING = 0
-PAGE_SCROLLBAR_GAP = 6
+PAGE_SCROLLBAR_GAP = 2
+SCROLLBAR_RIGHT_INSET = 0
 PAGE_HISTORY_SPACING = 6
 
 CARD_INNER_ROW_SPACING = 12
@@ -109,8 +110,8 @@ POPUP_PADDING_Y = 12
 POPUP_CONTENT_SPACING = 10
 POPUP_LABEL_INDENT = 38
 
-SCROLLBAR_WIDTH = 6
-SCROLLBAR_RADIUS = 3
+SCROLLBAR_WIDTH = 4
+SCROLLBAR_RADIUS = 2
 SCROLLBAR_MARGIN_TOP = 6
 SCROLLBAR_MARGIN_BOTTOM = 6
 SCROLLBAR_MIN_HANDLE_H = 24
@@ -1759,9 +1760,10 @@ class ExternalScrollPane(QWidget):
         super().__init__(parent)
         self.window = window
         self.setStyleSheet(transparent_row_style())
-        root = QHBoxLayout(self)
+
+        root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(PAGE_SCROLLBAR_GAP)
+        root.setSpacing(0)
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
@@ -1771,12 +1773,12 @@ class ExternalScrollPane(QWidget):
         self.scroll.setStyleSheet(self.window.scroll_container_style('QScrollArea'))
         root.addWidget(self.scroll, 1)
 
-        self.scrollbar = QScrollBar(Qt.Vertical)
+        self.scrollbar = QScrollBar(Qt.Vertical, self)
         self.scrollbar.setCursor(Qt.PointingHandCursor)
         self.scrollbar.setFixedWidth(SCROLLBAR_WIDTH)
         self.scrollbar.setStyleSheet(self.window.scrollbar_style('QScrollBar'))
         self.scrollbar.hide()
-        root.addWidget(self.scrollbar, 0, Qt.AlignRight)
+        self.scrollbar.raise_()
 
         internal_bar = self.scroll.verticalScrollBar()
         internal_bar.rangeChanged.connect(self.sync_from_internal_range)
@@ -1796,10 +1798,26 @@ class ExternalScrollPane(QWidget):
     def scroll_to_top(self):
         self.scrollbar.setValue(0)
 
+    def update_scrollbar_geometry(self):
+        x = max(0, self.width() - SCROLLBAR_WIDTH - SCROLLBAR_RIGHT_INSET)
+        y = SCROLLBAR_MARGIN_TOP
+        h = max(0, self.height() - SCROLLBAR_MARGIN_TOP - SCROLLBAR_MARGIN_BOTTOM)
+        self.scrollbar.setGeometry(x, y, SCROLLBAR_WIDTH, h)
+        self.scrollbar.raise_()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.update_scrollbar_geometry()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        QTimer.singleShot(0, self.update_scrollbar_geometry)
+
     def refresh_scrollbar(self):
         internal_bar = self.scroll.verticalScrollBar()
         self.sync_from_internal_range(internal_bar.minimum(), internal_bar.maximum())
         self.sync_from_internal_value(internal_bar.value())
+        self.update_scrollbar_geometry()
 
     def sync_from_internal_range(self, minimum, maximum):
         internal_bar = self.scroll.verticalScrollBar()
@@ -1809,6 +1827,7 @@ class ExternalScrollPane(QWidget):
         self.scrollbar.setSingleStep(internal_bar.singleStep())
         self.scrollbar.blockSignals(False)
         self.scrollbar.setVisible(maximum > minimum)
+        self.update_scrollbar_geometry()
 
     def sync_from_internal_value(self, value):
         internal_bar = self.scroll.verticalScrollBar()
@@ -1818,6 +1837,7 @@ class ExternalScrollPane(QWidget):
         self.scrollbar.setSingleStep(internal_bar.singleStep())
         self.scrollbar.blockSignals(False)
         self.scrollbar.setVisible(internal_bar.maximum() > internal_bar.minimum())
+        self.update_scrollbar_geometry()
 
     def sync_to_internal_value(self, value):
         internal_bar = self.scroll.verticalScrollBar()
