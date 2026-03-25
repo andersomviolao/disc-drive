@@ -25,14 +25,14 @@ except Exception:
 from send2trash import send2trash
 from PySide6.QtCore import Qt, Signal, QObject, QEasingCurve, QPropertyAnimation, QTimer, QRect, QSize, QRectF, QByteArray, QPoint, QBuffer, QIODevice
 from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap, QBrush, QLinearGradient, QIntValidator, QImage, QImageReader
-from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QSystemTrayIcon, QPushButton, QStackedWidget, QGraphicsOpacityEffect, QFileDialog, QScrollArea, QTextEdit, QSizePolicy
+from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QSystemTrayIcon, QPushButton, QStackedWidget, QGraphicsOpacityEffect, QFileDialog, QScrollArea, QTextEdit, QSizePolicy, QScrollBar
 try:
     import winreg
 except Exception:
     winreg = None
 APP_NAME = 'disc-drive'
 APP_DIR_NAME = 'disc-drive'
-APP_VERSION = '3.0.47'
+APP_VERSION = '3.0.48'
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -96,7 +96,8 @@ PAGE_ROOT_SPACING = 10
 PAGE_HEADER_SPACING = 1
 PAGE_TOP_ROW_SPACING = 8
 PAGE_SECTION_SPACING = 10
-PAGE_SCROLL_RIGHT_PADDING = 4
+PAGE_SCROLL_CONTENT_RIGHT_PADDING = 0
+PAGE_SCROLLBAR_GAP = 6
 PAGE_HISTORY_SPACING = 6
 
 CARD_INNER_ROW_SPACING = 12
@@ -108,8 +109,8 @@ POPUP_PADDING_Y = 12
 POPUP_CONTENT_SPACING = 10
 POPUP_LABEL_INDENT = 38
 
-SCROLLBAR_WIDTH = 8
-SCROLLBAR_RADIUS = 4
+SCROLLBAR_WIDTH = 6
+SCROLLBAR_RADIUS = 3
 SCROLLBAR_MARGIN_TOP = 6
 SCROLLBAR_MARGIN_BOTTOM = 6
 SCROLLBAR_MIN_HANDLE_H = 24
@@ -1752,6 +1753,78 @@ class PageBase(QWidget):
     def minimumSizeHint(self):
         return QSize(0, 0)
 
+class ExternalScrollPane(QWidget):
+
+    def __init__(self, window, parent=None):
+        super().__init__(parent)
+        self.window = window
+        self.setStyleSheet(transparent_row_style())
+        root = QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(PAGE_SCROLLBAR_GAP)
+
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.NoFrame)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll.setStyleSheet(self.window.scroll_container_style('QScrollArea'))
+        root.addWidget(self.scroll, 1)
+
+        self.scrollbar = QScrollBar(Qt.Vertical)
+        self.scrollbar.setCursor(Qt.PointingHandCursor)
+        self.scrollbar.setFixedWidth(SCROLLBAR_WIDTH)
+        self.scrollbar.setStyleSheet(self.window.scrollbar_style('QScrollBar'))
+        self.scrollbar.hide()
+        root.addWidget(self.scrollbar, 0, Qt.AlignRight)
+
+        internal_bar = self.scroll.verticalScrollBar()
+        internal_bar.rangeChanged.connect(self.sync_from_internal_range)
+        internal_bar.valueChanged.connect(self.sync_from_internal_value)
+        self.scrollbar.valueChanged.connect(self.sync_to_internal_value)
+
+    def setWidget(self, widget):
+        self.scroll.setWidget(widget)
+        QTimer.singleShot(0, self.refresh_scrollbar)
+
+    def widget(self):
+        return self.scroll.widget()
+
+    def verticalScrollBar(self):
+        return self.scrollbar
+
+    def scroll_to_top(self):
+        self.scrollbar.setValue(0)
+
+    def refresh_scrollbar(self):
+        internal_bar = self.scroll.verticalScrollBar()
+        self.sync_from_internal_range(internal_bar.minimum(), internal_bar.maximum())
+        self.sync_from_internal_value(internal_bar.value())
+
+    def sync_from_internal_range(self, minimum, maximum):
+        internal_bar = self.scroll.verticalScrollBar()
+        self.scrollbar.blockSignals(True)
+        self.scrollbar.setRange(minimum, maximum)
+        self.scrollbar.setPageStep(internal_bar.pageStep())
+        self.scrollbar.setSingleStep(internal_bar.singleStep())
+        self.scrollbar.blockSignals(False)
+        self.scrollbar.setVisible(maximum > minimum)
+
+    def sync_from_internal_value(self, value):
+        internal_bar = self.scroll.verticalScrollBar()
+        self.scrollbar.blockSignals(True)
+        self.scrollbar.setValue(value)
+        self.scrollbar.setPageStep(internal_bar.pageStep())
+        self.scrollbar.setSingleStep(internal_bar.singleStep())
+        self.scrollbar.blockSignals(False)
+        self.scrollbar.setVisible(internal_bar.maximum() > internal_bar.minimum())
+
+    def sync_to_internal_value(self, value):
+        internal_bar = self.scroll.verticalScrollBar()
+        if internal_bar.value() != value:
+            internal_bar.setValue(value)
+
+
 class ThumbnailTile(QLabel):
 
     def __init__(self, size: int=THUMB_TILE_SIZE, parent=None):
@@ -2045,15 +2118,11 @@ class PostTemplatePage(PageBase):
         top_row.addWidget(self.test_btn)
         self.body.addLayout(top_row)
 
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setFrameShape(QFrame.NoFrame)
-        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.scroll.setStyleSheet(self.window.scrollbar_style('QScrollArea'))
+        self.scroll = ExternalScrollPane(self.window)
         self.scroll_host = QWidget()
         self.scroll_host.setStyleSheet(transparent_row_style())
         self.scroll_body = QVBoxLayout(self.scroll_host)
-        self.scroll_body.setContentsMargins(0, 0, PAGE_SCROLL_RIGHT_PADDING, 0)
+        self.scroll_body.setContentsMargins(0, 0, PAGE_SCROLL_CONTENT_RIGHT_PADDING, 0)
         self.scroll_body.setSpacing(CARD_STACK_SPACING)
         self.scroll.setWidget(self.scroll_host)
         self.body.addWidget(self.scroll, 1)
@@ -2140,7 +2209,7 @@ class PostTemplatePage(PageBase):
         has_webhook = bool((config.get('webhook') or '').strip())
         self.test_btn.setEnabled(has_webhook)
         self.test_btn.setStyleSheet(self.window.small_button_style(enabled=has_webhook, accent=BLUE))
-        self.scroll.verticalScrollBar().setValue(0)
+        self.scroll.scroll_to_top()
         self._loading = False
         self.editor.setFocus()
         cursor = self.editor.textCursor()
@@ -2155,6 +2224,7 @@ class PostTemplatePage(PageBase):
     def on_editor_height_changed(self, _height):
         self.content_card.updateGeometry()
         self.scroll_host.adjustSize()
+        self.scroll.refresh_scrollbar()
 
     def on_name_text_changed(self):
         if self._loading:
@@ -2303,15 +2373,11 @@ class SettingsPage(PageBase):
         back_row.addWidget(self.back_btn)
         back_row.addStretch(1)
         self.body.addLayout(back_row)
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setFrameShape(QFrame.NoFrame)
-        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.scroll.setStyleSheet(self.window.scrollbar_style('QScrollArea'))
+        self.scroll = ExternalScrollPane(self.window)
         self.scroll_host = QWidget()
         self.scroll_host.setStyleSheet(transparent_row_style())
         self.scroll_body = QVBoxLayout(self.scroll_host)
-        self.scroll_body.setContentsMargins(0, 0, PAGE_SCROLL_RIGHT_PADDING, 0)
+        self.scroll_body.setContentsMargins(0, 0, PAGE_SCROLL_CONTENT_RIGHT_PADDING, 0)
         self.scroll_body.setSpacing(CARD_STACK_SPACING)
         self.scroll.setWidget(self.scroll_host)
         self.body.addWidget(self.scroll, 1)
@@ -2579,11 +2645,64 @@ class MainWindow(QWidget):
         QLineEdit:focus {{ border: {BTN_BORDER}px solid {BLUE}; }}
         QLineEdit::placeholder {{ color: #6f7580; }}
         """
-    def scrollbar_style(self, selector='QScrollArea'):
-        return f'\n        {selector} {{\n            background: transparent;\n            border: none;\n        }}\n        QScrollBar:vertical {{\n            background: transparent;\n            border: none;\n            width: 8px;\n            margin: 6px 0 6px 0;\n        }}\n        QScrollBar::handle:vertical {{\n            background: #2a2d34;\n            border: none;\n            border-radius: 4px;\n            min-height: 24px;\n        }}\n        QScrollBar::handle:vertical:hover {{\n            background: #343944;\n        }}\n        QScrollBar::handle:vertical:pressed {{\n            background: #3d4451;\n        }}\n        QScrollBar::add-line:vertical,\n        QScrollBar::sub-line:vertical {{\n            height: 0px;\n            background: transparent;\n            border: none;\n        }}\n        QScrollBar::add-page:vertical,\n        QScrollBar::sub-page:vertical {{\n            background: transparent;\n            border: none;\n        }}\n        QScrollBar:horizontal {{\n            background: transparent;\n            border: none;\n            height: 0px;\n            margin: 0;\n        }}\n        QScrollBar::handle:horizontal,\n        QScrollBar::add-line:horizontal,\n        QScrollBar::sub-line:horizontal,\n        QScrollBar::add-page:horizontal,\n        QScrollBar::sub-page:horizontal {{\n            background: transparent;\n            border: none;\n            width: 0px;\n        }}\n        '
+    def scroll_container_style(self, selector='QScrollArea'):
+        return f"""
+        {selector} {{
+            background: transparent;
+            border: none;
+        }}
+        """
+
+    def scrollbar_style(self, selector='QScrollBar'):
+        return f"""
+        {selector}:vertical {{
+            background: transparent;
+            border: none;
+            width: {SCROLLBAR_WIDTH}px;
+            margin: {SCROLLBAR_MARGIN_TOP}px 0 {SCROLLBAR_MARGIN_BOTTOM}px 0;
+        }}
+        {selector}::handle:vertical {{
+            background: #2a2d34;
+            border: none;
+            border-radius: {SCROLLBAR_RADIUS}px;
+            min-height: {SCROLLBAR_MIN_HANDLE_H}px;
+        }}
+        {selector}::handle:vertical:hover {{
+            background: #343944;
+        }}
+        {selector}::handle:vertical:pressed {{
+            background: #3d4451;
+        }}
+        {selector}::add-line:vertical,
+        {selector}::sub-line:vertical {{
+            height: 0px;
+            background: transparent;
+            border: none;
+        }}
+        {selector}::add-page:vertical,
+        {selector}::sub-page:vertical {{
+            background: transparent;
+            border: none;
+        }}
+        {selector}:horizontal {{
+            background: transparent;
+            border: none;
+            height: 0px;
+            margin: 0;
+        }}
+        {selector}::handle:horizontal,
+        {selector}::add-line:horizontal,
+        {selector}::sub-line:horizontal,
+        {selector}::add-page:horizontal,
+        {selector}::sub-page:horizontal {{
+            background: transparent;
+            border: none;
+            width: 0px;
+        }}
+        """
 
     def text_edit_style(self):
-        return f"\n        QTextEdit {{\n            background: {FIELD_BG};\n            color: {FIELD_TEXT};\n            border: 1px solid #2c3038;\n            border-radius: {BTN_RADIUS}px;\n            padding: 10px 12px;\n            font: {font_css(FONT_BASE, FONT_WEIGHT_SEMIBOLD)};\n        }}\n        QTextEdit:focus {{ border: {BTN_BORDER}px solid {BLUE}; }}\n        {self.scrollbar_style('QTextEdit')}\n        "
+        return f"\n        QTextEdit {{\n            background: {FIELD_BG};\n            color: {FIELD_TEXT};\n            border: 1px solid #2c3038;\n            border-radius: {BTN_RADIUS}px;\n            padding: 10px 12px;\n            font: {font_css(FONT_BASE, FONT_WEIGHT_SEMIBOLD)};\n        }}\n        QTextEdit:focus {{ border: {BTN_BORDER}px solid {BLUE}; }}\n        {self.scrollbar_style('QScrollBar')}\n        "
 
     def post_editor_style(self):
         return f"\n        QTextEdit {{\n            background: {FIELD_BG};\n            color: {FIELD_TEXT};\n            border: 1px solid #2c3038;\n            border-radius: {BTN_RADIUS}px;\n            padding: {POST_EDITOR_PAD_Y}px {POST_EDITOR_PAD_X}px;\n            font: {font_css(FONT_BASE, FONT_WEIGHT_SEMIBOLD)};\n        }}\n        QTextEdit:focus {{ border: {BTN_BORDER}px solid {BLUE}; }}\n        "
