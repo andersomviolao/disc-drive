@@ -1,43 +1,68 @@
 # disc-drive
 
-A lightweight desktop app for automatically uploading images and videos from a local folder to a Discord webhook.
+A lightweight Windows desktop app for automatically uploading images and videos from a local folder to a Discord webhook.
 
-The app was built for a simple workflow: monitor a folder, queue valid files, and send them to Discord with optional custom post text, embed mode, thumbnails, tray behavior, and basic automation controls.
+The project is focused on a simple workflow: watch a folder, queue supported files, and send them to Discord with optional delay, custom post text, embed mode, avatar handling, tray behavior, and recent-file thumbnails.
 
 ## Current status
 
-This README reflects the current behavior up to version **3.0.24**.
+This README reflects the current behavior up to version **3.0.36**.
 
-## Main features
+## What the app includes
 
-- Monitor a local folder for new files
-- Upload supported media files to a Discord webhook
-- Keep files ordered by real creation date when possible
-- Optional delayed posting with a configurable timer
-- Optional instant sending mode
-- Tray integration with running / paused / sending states
-- Settings page inside the main window
-- Custom post text editor inside the app
-- Optional embed mode for webhook posts
-- Default embed color set to **Discord Blue** (`#5865F2`)
-- Custom webhook bot name support
-- Custom webhook bot image support
-- Webhook avatar auto-fetch and refresh
-- Local fallback default image support
-- Animated / static thumbnail handling for recent files
-- Optional delete-after-send behavior
-- Start with Windows option
-- Clear sent log option
+Monitor a local folder for supported media.
 
-## Default image behavior
+Upload files to a Discord webhook.
 
-The application now expects the default image at:
+Keep files ordered by real creation date when possible.
 
-`files/default-img.png`
+Apply an optional delay before sending new posts.
 
-This `files` folder must stay next to the main script or executable.
+Use a configurable interval between uploads.
 
-Example:
+Pause or resume monitoring from the home page.
+
+Hide to the system tray and restore near the tray area.
+
+Auto-hide the interface when it loses focus.
+
+Edit webhook, watched folder, and main options directly inside **Settings**.
+
+Customize post text, webhook name, webhook image, and embed color inside **Customize Post**.
+
+Show up to **14** recent thumbnails in a **7 × 2** layout on the home page.
+
+Clear the sent-history log when needed.
+
+Start with Windows.
+
+Optionally move sent files to the Recycle Bin.
+
+## Webhook and folder setup
+
+The current interface no longer uses separate webhook and folder edit pages.
+
+Both actions now live directly inside **Settings**:
+
+1. Paste the webhook with the **Paste** button.
+2. Choose the watched folder with the **Browse** button.
+3. All changes are saved immediately.
+
+Long webhook URLs are shown in a shortened form in the interface so the layout stays clean.
+
+## Avatar behavior
+
+The app can work with three avatar sources:
+
+1. A manually selected custom image.
+2. The current webhook avatar.
+3. The local default image at `files/default-img.png`.
+
+If the local default image is missing, the app generates a fallback default image automatically.
+
+## Default image location
+
+The application expects the default image here:
 
 ```text
 disc-drive/
@@ -46,40 +71,7 @@ disc-drive/
 │  └─ default-img.png
 ```
 
-### Avatar priority
-
-The app uses avatar images in this order:
-
-1. Webhook avatar
-2. Local `files/default-img.png`
-3. Generated temporary solid Discord Blue avatar
-
-### If `default-img.png` is missing
-
-- The interface shows a solid **Discord Blue** block
-- Webhook sending uses a generated temporary blue avatar
-
-## Visual defaults
-
-The main accent color is now **Discord Blue**:
-
-`#5865F2`
-
-The default embed color is also:
-
-`#5865F2`
-
-## Requirements
-
-Typical dependencies may include:
-
-- Python 3
-- PySide6
-- requests
-- Pillow
-- send2trash
-
-Depending on your build, additional packages may be required.
+The `files` folder must stay next to the main script or executable.
 
 ## FFmpeg
 
@@ -89,48 +81,47 @@ For better thumbnail support, keep FFmpeg here:
 ffmpeg/bin/ffmpeg.exe
 ```
 
-This folder should stay next to the main script.
+This folder should stay next to the main script or executable.
 
-## Configuration behavior
+## Configuration files
 
-The app stores its configuration locally and supports options such as:
+The app stores runtime data in:
 
-- Delete after send
-- Clear log
-- Start with Windows
-- Custom post text
-- Post timer
-- Open folder shortcut
+```text
+%LOCALAPPDATA%/disc-drive/
+```
 
-## Removed behavior
+Typical files and folders include:
 
-As of **3.0.24**, the project no longer includes the old **Debug Mode** system.
+`config.json`
 
-Removed items include:
+`sent_log.json`
 
-- Debug Mode toggle
-- `debug_mode` config usage
-- `debug.json`
-- verbose debug logging flow
+`avatar.png`
 
-The app now stays quiet during normal operation, showing only standard Python errors if something actually breaks.
+`thumbs-log/`
 
-## How to use
+## Python requirements
 
-1. Open the app
-2. Set your Discord webhook URL
-3. Choose the folder to monitor
-4. Adjust the settings you want
-5. Edit the post text if needed
-6. Leave the app running or minimize it to tray
-7. New supported files will be queued and sent automatically
+Install the Python packages listed in `requirements.txt`.
+
+Current runtime dependencies are:
+
+`PySide6`
+
+`requests`
+
+`Send2Trash`
 
 ## Notes
 
-- If a webhook has its own avatar, that avatar takes priority
-- Clicking **Clear** in the image area restores the default local image behavior
-- If no local default image exists, the app falls back to the generated blue avatar behavior
-- The app is designed to stay lightweight and visually minimal
+The home page now focuses on monitoring state and recent history.
+
+The old **Send Now** action is no longer part of the interface.
+
+The settings page is the main place for connection and folder setup.
+
+The project is Windows-focused because of tray behavior, startup integration, and Windows-specific file handling.
 
 ## Recommended folder layout
 
@@ -139,9 +130,9 @@ disc-drive/
 ├─ main.py
 ├─ files/
 │  └─ default-img.png
-├─ ffmpeg/
-│  └─ bin/
-│     └─ ffmpeg.exe
+└─ ffmpeg/
+   └─ bin/
+      └─ ffmpeg.exe
 ```
 
 ## Changelog

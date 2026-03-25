@@ -17,6 +17,16 @@ dist/
 pip-wheel-metadata/
 *.spec
 
+# Test and coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Tool caches
+.mypy_cache/
+.ruff_cache/
+
 # IDE and editor files
 .vscode/
 .idea/
@@ -34,3 +44,6 @@ temp/
 *.tmp
 *.bak
 *.orig
+
+# Optional local binary folder
+# ffmpeg/

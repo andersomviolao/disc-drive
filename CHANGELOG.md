@@ -4,6 +4,68 @@ All notable changes to **disc-drive** are documented in this file.
 
 This changelog combines the latest version notes with reconstructed historical entries from uploaded source snapshots. Older versions were rebuilt from source snapshots, so very small visual tweaks may not be listed individually.
 
+## [3.0.36]
+
+### Removed
+
+- Removed the **Send Now** button from the home page.
+- Removed the remaining manual send-now backend flow and related UI wiring.
+
+### Changed
+
+- Expanded the **Last sent** gallery from one row of 7 thumbnails to two rows of 7 thumbnails.
+- Updated thumbnail positioning to support the wrapped 2-row layout.
+- Tuned thumbnail fade and move timings for a lighter, cleaner home-page animation flow.
+
+## [3.0.35]
+
+### Changed
+
+- Simplified webhook and watched-folder setup by keeping both actions directly inside **Settings**.
+- Removed the separate dedicated webhook and folder edit pages from the navigation flow.
+- Shortened the **Post Timer** description to keep the settings layout visually cleaner.
+- When required setup is missing, the app now opens **Settings** directly instead of redirecting to standalone edit pages.
+
+## [3.0.34]
+
+### Changed
+
+- Added a shortened / masked webhook subtitle display to prevent long webhook URLs from breaking the settings layout.
+- Kept the full webhook value available through the tooltip while showing a cleaner compact label in the interface.
+
+## [3.0.33]
+
+### Added
+
+- Added a **Paste** action for the webhook setting using the clipboard.
+
+### Changed
+
+- Replaced the inline webhook text field and save button in **Settings** with a more compact clipboard-driven workflow.
+- The webhook row now shows the saved webhook directly in the subtitle area.
+
+## [3.0.32]
+
+### Changed
+
+- Simplified watched-folder editing in **Settings** by using a direct browse workflow instead of a readonly text field plus separate save action.
+- Updated the watched-folder row to show the current folder path in the subtitle area.
+
+## [3.0.31]
+
+### Changed
+
+- Moved webhook and watched-folder editing from the home screen into the **Settings** page.
+- Reworked both settings rows to support compact inline controls.
+- Renamed the home-page history section from **History** to **Last sent**.
+
+## [3.0.30]
+
+### Changed
+
+- Improved file ordering and timestamp formatting by preferring the real Windows creation timestamp when available, while keeping safe fallback paths for other metadata sources.
+- Added dedicated helpers for creation-date handling used by sorting and post-template rendering.
+
 ## [3.0.24]
 
 ### Removed
@@ -274,135 +336,80 @@ This changelog combines the latest version notes with reconstructed historical e
   - `WebhookPage`
   - `FolderPage`
   - `SettingsPage`
-- Added `ToggleSwitch` and richer reusable UI building blocks.
-- Added **Start with Windows** support via the Windows registry.
-- Added **Test Webhook** support.
-- Added normalized configuration handling.
 
 ### Changed
 
-- Reworked the application into a more complete desktop UI instead of a single compact window.
-- Improved separation between monitoring logic, settings, and navigation.
-
-## [1.8.3]
-
-### Added
-
-- Added `WebhookInputDialog`.
-- Added explicit Discord webhook validation.
-- Added dialog-level error feedback and clipboard paste support.
-
-### Changed
-
-- Improved webhook editing flow and validation UX.
-
-## [1.8.2]
-
-### Added
-
-- Added better failed-upload handling with an `ERROR` folder workflow.
-- Added a direct **Send Now** trigger from the PySide6 interface.
-
-### Changed
-
-- Refined the new PySide6 window layout and bottom action buttons.
-- Improved operational handling for watched-folder errors.
+- Continued the transition away from the earlier simpler layout.
 
 ## [1.8.0]
 
 ### Added
 
-- Major migration to **PySide6**.
-- Added a new desktop UI architecture with:
-  - `UISignals`
-  - `HoverButton`
-  - `RoundedPanel`
-  - `WebhookWindow`
-  - `TrayController`
-- Added a modern card-based window layout and richer tray integration.
+- Migrated the application UI to **PySide6**.
+- Added a cleaner custom interface with in-window pages instead of separate utility popups.
 
 ### Changed
 
-- Replaced the previous Tk / CustomTkinter approach with a more advanced PySide6 desktop interface.
-
-## [1.7.3]
-
-### Added
-
-- Added hidden-root Tkinter utility flow for dialogs and first-run setup.
-- Added `send_lock` protection for manual sending and monitoring coordination.
-- Added clearer actions for folder change, webhook change, history clearing, and config folder access.
-
-### Changed
-
-- Reworked the interface flow again for stability after the floating menu approach.
-- Improved first-run setup and queue-driven GUI actions.
+- Replaced the older Tk / CustomTkinter based workflow with a more polished Qt-based interface.
 
 ## [1.7.2]
 
 ### Changed
 
-- Refined the CustomTkinter floating menu presentation.
-- Improved first-run webhook setup flow.
-- Tightened send/manual-send behavior and menu interactions.
+- Improved file queue behavior and reliability around delayed sending.
+- Continued refinement of file ordering and send timing.
 
 ## [1.7.1]
 
 ### Changed
 
-- Maintenance iteration over the CustomTkinter branch.
-- Minor refinements to the floating menu-based workflow.
+- Polished the delayed posting workflow.
+- Improved general send stability.
+
+## [1.7]
+
+### Added
+
+- Added delayed posting support.
+- Added configurable wait time before new files can be sent.
+- Added a send interval between uploads.
+
+### Changed
+
+- Improved the monitored-folder send workflow to better support queue-style posting.
 
 ## [1.6]
 
 ### Added
 
-- Added `post.txt` template loading support.
-
-### Changed
-
-- Introduced editable post-template behavior into the upload flow.
+- Added support for custom post text.
+- Added placeholder rendering for file name and dates.
 
 ## [1.5]
 
 ### Added
 
-- Migrated the interface to **CustomTkinter**.
-- Added a themed floating control menu (`FloatingMenu`).
-- Added actions for pause, send, folder selection, webhook editing, history clearing, and exit.
-
-### Changed
-
-- Reworked the project from simple Tkinter dialogs into a more visually styled desktop control panel.
+- Added tray pause / resume controls.
+- Added better sent-log handling.
 
 ## [1.4]
 
-### Added
-
-- Added a standalone configuration GUI.
-- Added **Send Now** support.
-- Added cache/history clearing support.
-
 ### Changed
 
-- Replaced the earlier setup-only dialog flow with a more configurable control workflow.
+- Improved basic UI flow and configuration management.
 
 ## [1.3]
 
 ### Added
 
-- Added the ability to change the watched folder after setup.
-- Added the ability to change the webhook after setup.
+- Added configuration storage improvements.
+- Added watched-folder persistence.
 
 ## [1.2]
 
-### Added
-
-- Added file hashing for duplicate detection.
-
 ### Changed
 
-- Improved protection against repeated uploads of the same file.
+- Improved webhook validation and first-run behavior.
 
 ## [1.1]
 

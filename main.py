@@ -32,7 +32,7 @@ except Exception:
     winreg = None
 APP_NAME = 'disc-drive'
 APP_DIR_NAME = 'disc-drive'
-APP_VERSION = '3.0.34'
+APP_VERSION = '3.0.36'
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -59,7 +59,9 @@ AVATAR_MODE_MANUAL = 'manual'
 THUMBS_DIR = BASE_DIR / 'thumbs-log'
 THUMB_TILE_SIZE = 64
 THUMB_CACHE_DIMENSION = 300
-THUMB_HOME_VISIBLE_COUNT = 7
+THUMB_HOME_COLUMNS = 7
+THUMB_HOME_ROWS = 2
+THUMB_HOME_VISIBLE_COUNT = THUMB_HOME_COLUMNS * THUMB_HOME_ROWS
 THUMB_LOG_LIMIT = 1000
 IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'}
 VIDEO_EXTENSIONS = {'.mp4', '.mov', '.m4v', '.avi', '.mkv', '.webm', '.wmv', '.mpeg', '.mpg', '.m2ts', '.ts'}
@@ -1157,38 +1159,6 @@ def send_file(path):
     except Exception as exc:
         return False
 
-def send_now_manual():
-    if not config.get('folder'):
-        signals.toast.emit('error', 'Select a folder first.')
-        return
-    folder = config.get('folder', '')
-    if not os.path.isdir(folder):
-        signals.toast.emit('error', 'The watched folder does not exist.')
-        return
-    if not send_lock.acquire(blocking=False):
-        signals.toast.emit('warning', 'A send operation is already in progress.')
-        return
-    try:
-        files = [os.path.join(folder, f) for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f)) and is_supported_media_file(f)]
-        sent_any = False
-        for file in sorted(files, key=get_file_creation_timestamp):
-            if stop_event.is_set():
-                break
-            if send_file(file):
-                sent_any = True
-                signals.toast.emit('success', f'Sent: {os.path.basename(file)}')
-                for _ in range(get_post_interval_seconds()):
-                    if stop_event.is_set():
-                        break
-                    time.sleep(1)
-        if not sent_any:
-            signals.toast.emit('info', 'No file is available to send right now.')
-    except Exception as exc:
-        signals.toast.emit('error', 'Send now failed.')
-    finally:
-        send_lock.release()
-        signals.refresh_fields.emit()
-
 def monitoring_loop():
     global monitoring
     while not stop_event.is_set():
@@ -1667,35 +1637,6 @@ class PageBase(QWidget):
     def minimumSizeHint(self):
         return QSize(0, 0)
 
-class HomeValueRow(QFrame):
-
-    def __init__(self, window, title, button_text, handler):
-        super().__init__()
-        self.setStyleSheet(f'\n            QFrame {{\n                background: {CARD};\n                border: 1px solid {CARD_BORDER};\n                border-radius: 16px;\n            }}\n            QLabel {{\n                background: transparent;\n                border: none;\n            }}\n            ')
-        root = QHBoxLayout(self)
-        root.setContentsMargins(14, 10, 10, 10)
-        root.setSpacing(10)
-        left = QVBoxLayout()
-        left.setSpacing(2)
-        self.title_label = QLabel(title)
-        self.title_label.setStyleSheet(f"color:{TEXT}; font: 700 10px 'Segoe UI';")
-        left.addWidget(self.title_label)
-        self.value_label = QLabel('')
-        self.value_label.setWordWrap(False)
-        self.value_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.value_label.setStyleSheet(f"color:{FIELD_TEXT}; font: 500 9px 'Segoe UI'; background: transparent; border: none;")
-        self.value_label.setMinimumHeight(18)
-        left.addWidget(self.value_label)
-        root.addLayout(left, 1)
-        self.button = window.make_small_button(button_text, handler)
-        self.button.setFixedSize(78, 28)
-        root.addWidget(self.button, 0, Qt.AlignVCenter)
-
-    def set_value(self, text, placeholder):
-        value = (text or '').strip()
-        self.value_label.setText(value if value else placeholder)
-        self.value_label.setStyleSheet(f"color:{(FIELD_TEXT if value else '#6f7580')}; font: 500 9px 'Segoe UI'; background: transparent; border: none;")
-
 class ThumbnailTile(QLabel):
 
     def __init__(self, size: int=THUMB_TILE_SIZE, parent=None):
@@ -1745,21 +1686,30 @@ class ThumbnailTile(QLabel):
         draw_y = inner.y() + (inner.height() - draw_h) / 2
         painter.drawPixmap(QRectF(draw_x, draw_y, draw_w, draw_h), pixmap, QRectF(0, 0, pw, ph))
 
+
 class ThumbnailStrip(QWidget):
 
-    def __init__(self, tile_size: int=THUMB_TILE_SIZE, visible_count: int=THUMB_HOME_VISIBLE_COUNT, spacing: int=8, parent=None):
+    def __init__(self, tile_size: int=THUMB_TILE_SIZE, visible_count: int=THUMB_HOME_VISIBLE_COUNT, columns: int=THUMB_HOME_COLUMNS, spacing: int=8, row_spacing: int=8, parent=None):
         super().__init__(parent)
         self.tile_size = tile_size
         self.visible_count = visible_count
+        self.columns = max(1, columns)
+        self.rows = max(1, int(math.ceil(self.visible_count / self.columns)))
         self.spacing = spacing
+        self.row_spacing = row_spacing
         self.visible_tiles = []
         self._animations = []
-        total_width = tile_size * visible_count + spacing * max(0, visible_count - 1)
-        self.setFixedSize(total_width, tile_size)
+        total_width = tile_size * self.columns + spacing * max(0, self.columns - 1)
+        total_height = tile_size * self.rows + row_spacing * max(0, self.rows - 1)
+        self.setFixedSize(total_width, total_height)
         self.setStyleSheet('background: transparent;')
 
-    def slot_x(self, index: int) -> int:
-        return index * (self.tile_size + self.spacing)
+    def slot_pos(self, index: int) -> QPoint:
+        col = index % self.columns
+        row = index // self.columns
+        x = col * (self.tile_size + self.spacing)
+        y = row * (self.tile_size + self.row_spacing)
+        return QPoint(x, y)
 
     def has_items(self) -> bool:
         return bool(self.visible_tiles)
@@ -1793,7 +1743,7 @@ class ThumbnailStrip(QWidget):
         for index, path in enumerate(paths[:self.visible_count]):
             tile = ThumbnailTile(self.tile_size, self)
             tile.set_thumbnail(path)
-            tile.move(self.slot_x(index), 0)
+            tile.move(self.slot_pos(index))
             tile.set_opacity(1.0)
             tile.show()
             self.visible_tiles.append(tile)
@@ -1828,28 +1778,32 @@ class ThumbnailStrip(QWidget):
         self.stop_animations()
         outgoing_tile = self.visible_tiles[-1] if len(self.visible_tiles) >= self.visible_count else None
         moving_tiles = self.visible_tiles[:-1] if outgoing_tile else list(self.visible_tiles)
+
         new_tile = ThumbnailTile(self.tile_size, self)
         new_tile.set_thumbnail(new_path)
-        new_tile.move(self.slot_x(0), 0)
+        new_tile.move(self.slot_pos(0))
         new_tile.set_opacity(0.0)
         new_tile.show()
         new_tile.raise_()
+
         fade_in = QPropertyAnimation(new_tile.opacity_effect, b'opacity', self)
-        fade_in.setDuration(180)
+        fade_in.setDuration(140)
         fade_in.setStartValue(0.0)
         fade_in.setEndValue(1.0)
         fade_in.setEasingCurve(QEasingCurve.OutCubic)
         self._track_animation(fade_in)
+
         for index, tile in enumerate(moving_tiles, start=1):
             move_anim = QPropertyAnimation(tile, b'pos', self)
-            move_anim.setDuration(220)
+            move_anim.setDuration(170)
             move_anim.setStartValue(tile.pos())
-            move_anim.setEndValue(QPoint(self.slot_x(index), 0))
-            move_anim.setEasingCurve(QEasingCurve.InOutCubic)
+            move_anim.setEndValue(self.slot_pos(index))
+            move_anim.setEasingCurve(QEasingCurve.OutCubic)
             self._track_animation(move_anim)
+
         if outgoing_tile is not None:
             fade_out = QPropertyAnimation(outgoing_tile.opacity_effect, b'opacity', self)
-            fade_out.setDuration(140)
+            fade_out.setDuration(120)
             fade_out.setStartValue(outgoing_tile.opacity_effect.opacity())
             fade_out.setEndValue(0.0)
             fade_out.setEasingCurve(QEasingCurve.OutCubic)
@@ -1857,11 +1811,14 @@ class ThumbnailStrip(QWidget):
             def dispose_outgoing(tile=outgoing_tile):
                 tile.hide()
                 tile.deleteLater()
+
             fade_out.finished.connect(dispose_outgoing)
             self._track_animation(fade_out)
+
         self.visible_tiles = [new_tile] + moving_tiles[:self.visible_count - 1]
 
 class HomePage(PageBase):
+
 
     def __init__(self, window):
         super().__init__(f'{APP_NAME} v{APP_VERSION}', 'Simple monitoring, polished visuals, and everything inside the same interface.')
@@ -1898,9 +1855,6 @@ class HomePage(PageBase):
         self.pause_btn = self.window.make_small_button('Pause', self.window.toggle_monitoring, accent=BLUE)
         self.pause_btn.setFixedSize(102, 30)
         bottom.addWidget(self.pause_btn)
-        self.send_now_btn = self.window.make_small_button('Send Now', self.window.start_send_now, accent=BLUE)
-        self.send_now_btn.setFixedSize(102, 30)
-        bottom.addWidget(self.send_now_btn)
         self.body.addLayout(bottom)
 
     def refresh(self):
@@ -2526,11 +2480,6 @@ class MainWindow(QWidget):
 
     def clear_message(self):
         self.message_label.setText('')
-
-    def start_send_now(self):
-        self.save_post_template_if_needed()
-        thread = threading.Thread(target=send_now_manual, daemon=True)
-        thread.start()
 
     def toggle_monitoring(self):
         global monitoring
