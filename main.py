@@ -32,7 +32,7 @@ except Exception:
     winreg = None
 APP_NAME = 'disc-drive'
 APP_DIR_NAME = 'disc-drive'
-APP_VERSION = '3.0.44'
+APP_VERSION = '3.0.45'
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -120,6 +120,15 @@ RED = '#ff5f73'
 GREEN = '#4fd18b'
 CARD = '#1a1c20'
 CARD_BORDER = '#252830'
+CARD_BORDER_W = 1
+CARD_RADIUS = 16
+CARD_PADDING_X = 14
+CARD_PADDING_Y = 12
+CARD_STACK_SPACING = 10
+CARD_TEXT_SPACING = 2
+CARD_CONTENT_SPACING = 10
+CARD_PROFILE_MIN_H = 108
+CARD_POST_CONTENT_MIN_H = 184
 DEFAULT_EMBED_COLOR = BLUE
 FONT_TINY = 8
 FONT_BASE = 9
@@ -175,6 +184,20 @@ def enforce_fixed_window_size(widget, *, width=WINDOW_WIDTH, height=WINDOW_HEIGH
     widget.setBaseSize(width, height)
     if widget.width() != width or widget.height() != height:
         set_window_pos_safely(widget, width=width, height=height, move=False, resize=True)
+
+
+def card_frame_style(object_name: str) -> str:
+    return f'''
+        QFrame#{object_name} {{
+            background: {CARD};
+            border: {CARD_BORDER_W}px solid {CARD_BORDER};
+            border-radius: {CARD_RADIUS}px;
+        }}
+        QLabel {{
+            background: transparent;
+            border: none;
+        }}
+    '''
 
 def load_json(path: Path, default):
     with file_lock:
@@ -1945,12 +1968,12 @@ class PostTemplatePage(PageBase):
         self.scroll_host.setStyleSheet('background: transparent;')
         self.scroll_body = QVBoxLayout(self.scroll_host)
         self.scroll_body.setContentsMargins(0, 0, 4, 0)
-        self.scroll_body.setSpacing(10)
+        self.scroll_body.setSpacing(CARD_STACK_SPACING)
         self.scroll.setWidget(self.scroll_host)
         self.body.addWidget(self.scroll, 1)
 
         self.profile_card = CardSection('Webhook Profile', 'Choose the avatar, set the webhook name, or clear the current custom data.')
-        self.profile_card.setMinimumHeight(108)
+        self.profile_card.setMinimumHeight(CARD_PROFILE_MIN_H)
         profile_row = QHBoxLayout()
         profile_row.setContentsMargins(0, 0, 0, 0)
         profile_row.setSpacing(12)
@@ -1986,7 +2009,7 @@ class PostTemplatePage(PageBase):
         self.scroll_body.addWidget(self.embed_card)
 
         self.content_card = CardSection('Post Content', 'Edit the message template that will be sent together with the file.')
-        self.content_card.setMinimumHeight(184)
+        self.content_card.setMinimumHeight(CARD_POST_CONTENT_MIN_H)
         self.editor = QTextEdit()
         self.editor.setPlaceholderText('Type the post content here...')
         self.editor.setStyleSheet(self.window.post_editor_style())
@@ -2139,12 +2162,12 @@ class SettingRow(QFrame):
     def __init__(self, title, subtitle, right_widget):
         super().__init__()
         self.setObjectName('settingRow')
-        self.setStyleSheet(f'\n            QFrame#settingRow {{\n                background: {CARD};\n                border: 1px solid {CARD_BORDER};\n                border-radius: 16px;\n            }}\n            QLabel {{\n                background: transparent;\n                border: none;\n            }}\n            ')
+        self.setStyleSheet(card_frame_style('settingRow'))
         root = QHBoxLayout(self)
-        root.setContentsMargins(14, 12, 14, 12)
-        root.setSpacing(10)
+        root.setContentsMargins(CARD_PADDING_X, CARD_PADDING_Y, CARD_PADDING_X, CARD_PADDING_Y)
+        root.setSpacing(CARD_CONTENT_SPACING)
         left = QVBoxLayout()
-        left.setSpacing(2)
+        left.setSpacing(CARD_TEXT_SPACING)
         self.title_label = QLabel(title)
         self.title_label.setStyleSheet(f"color:{TEXT}; font: 700 10px 'Segoe UI';")
         left.addWidget(self.title_label)
@@ -2163,10 +2186,10 @@ class CardSection(QFrame):
     def __init__(self, title, subtitle=''):
         super().__init__()
         self.setObjectName('cardSection')
-        self.setStyleSheet(f'\n            QFrame#cardSection {{\n                background: {CARD};\n                border: 1px solid {CARD_BORDER};\n                border-radius: 16px;\n            }}\n            QLabel {{\n                background: transparent;\n                border: none;\n            }}\n            ')
+        self.setStyleSheet(card_frame_style('cardSection'))
         root = QVBoxLayout(self)
-        root.setContentsMargins(14, 12, 14, 12)
-        root.setSpacing(10)
+        root.setContentsMargins(CARD_PADDING_X, CARD_PADDING_Y, CARD_PADDING_X, CARD_PADDING_Y)
+        root.setSpacing(CARD_CONTENT_SPACING)
         self.title_label = QLabel(title)
         self.title_label.setStyleSheet(f"color:{TEXT}; font: 700 10px 'Segoe UI';")
         root.addWidget(self.title_label)
@@ -2176,7 +2199,7 @@ class CardSection(QFrame):
         root.addWidget(self.subtitle_label)
         self.content_layout = QVBoxLayout()
         self.content_layout.setContentsMargins(0, 0, 0, 0)
-        self.content_layout.setSpacing(10)
+        self.content_layout.setSpacing(CARD_CONTENT_SPACING)
         root.addLayout(self.content_layout)
 
 class SettingsPage(PageBase):
@@ -2198,7 +2221,7 @@ class SettingsPage(PageBase):
         self.scroll_host.setStyleSheet('background: transparent;')
         self.scroll_body = QVBoxLayout(self.scroll_host)
         self.scroll_body.setContentsMargins(0, 0, 4, 0)
-        self.scroll_body.setSpacing(10)
+        self.scroll_body.setSpacing(CARD_STACK_SPACING)
         self.scroll.setWidget(self.scroll_host)
         self.body.addWidget(self.scroll, 1)
 
