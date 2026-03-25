@@ -32,7 +32,7 @@ except Exception:
     winreg = None
 APP_NAME = 'disc-drive'
 APP_DIR_NAME = 'disc-drive'
-APP_VERSION = '3.0.39'
+APP_VERSION = '3.0.41'
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -1843,12 +1843,9 @@ class HomePage(PageBase):
         self.pause_btn = self.window.make_small_button('Pause', self.window.toggle_monitoring, accent=BLUE)
         self.pause_btn.setFixedSize(102, 30)
         bottom.addWidget(self.pause_btn)
-        self.cfg_btn = QPushButton('⚙️')
-        self.cfg_btn.setCursor(Qt.PointingHandCursor)
-        self.cfg_btn.clicked.connect(self.window.open_settings_page)
+        self.cfg_btn = self.window.make_secondary_button('Settings', self.window.open_settings_page)
         self.cfg_btn.setToolTip('Settings')
-        self.cfg_btn.setFixedSize(34, 34)
-        self.cfg_btn.setStyleSheet(self.window.round_icon_button_style())
+        self.cfg_btn.setFixedSize(86, 30)
         bottom.addWidget(self.cfg_btn)
         self.body.addLayout(bottom)
 
@@ -1921,13 +1918,13 @@ class PostTemplatePage(PageBase):
         profile_row.addWidget(self.avatar_preview, 0, Qt.AlignVCenter)
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText(APP_NAME)
-        self.name_input.setFixedHeight(32)
+        self.name_input.setFixedHeight(30)
         self.name_input.setStyleSheet(self.window.input_style())
         self.name_input.editingFinished.connect(self.on_name_editing_finished)
         self.name_input.textChanged.connect(self.on_name_text_changed)
         profile_row.addWidget(self.name_input, 1)
         self.clear_profile_btn = self.window.make_small_button('Clear', self.remove_profile_image)
-        self.clear_profile_btn.setFixedSize(82, 32)
+        self.clear_profile_btn.setFixedSize(82, 30)
         self.clear_profile_btn.setToolTip('Clear current image and custom name')
         profile_row.addWidget(self.clear_profile_btn, 0, Qt.AlignVCenter)
         self.profile_card.content_layout.addLayout(profile_row)
@@ -2210,7 +2207,7 @@ class SettingsPage(PageBase):
         self.timer_input = QLineEdit()
         self.timer_input.setValidator(QIntValidator(1, 999999, self))
         self.timer_input.setAlignment(Qt.AlignCenter)
-        self.timer_input.setFixedSize(42, 28)
+        self.timer_input.setFixedSize(42, 30)
         self.timer_input.setStyleSheet(self.window.compact_input_style())
         self.timer_input.editingFinished.connect(self.on_timer_input_finished)
         timer_layout.addWidget(self.timer_input, 0, Qt.AlignVCenter)
@@ -2413,8 +2410,19 @@ class MainWindow(QWidget):
         self.go_home(animated=False)
 
     def input_style(self):
-        return f"\n        QLineEdit {{\n            background: {FIELD_BG};\n            color: {FIELD_TEXT};\n            border: 1px solid #2c3038;\n            border-radius: 16px;\n            padding: 0 14px;\n            font: 600 9px 'Segoe UI';\n        }}\n        QLineEdit:focus {{ border: 1px solid {BLUE}; }}\n        QLineEdit::placeholder {{ color: #6f7580; }}\n        "
-
+        return f"""
+        QLineEdit {{
+            background: {FIELD_BG};
+            color: {FIELD_TEXT};
+            border: 1px solid #30343d;
+            border-radius: 13px;
+            padding: 0 12px;
+            min-height: 30px;
+            font: 600 9px 'Segoe UI';
+        }}
+        QLineEdit:focus {{ border: 1px solid {BLUE}; }}
+        QLineEdit::placeholder {{ color: #6f7580; }}
+        """
     def scrollbar_style(self, selector='QScrollArea'):
         return f'\n        {selector} {{\n            background: transparent;\n            border: none;\n        }}\n        QScrollBar:vertical {{\n            background: transparent;\n            border: none;\n            width: 8px;\n            margin: 6px 0 6px 0;\n        }}\n        QScrollBar::handle:vertical {{\n            background: #2a2d34;\n            border: none;\n            border-radius: 4px;\n            min-height: 24px;\n        }}\n        QScrollBar::handle:vertical:hover {{\n            background: #343944;\n        }}\n        QScrollBar::handle:vertical:pressed {{\n            background: #3d4451;\n        }}\n        QScrollBar::add-line:vertical,\n        QScrollBar::sub-line:vertical {{\n            height: 0px;\n            background: transparent;\n            border: none;\n        }}\n        QScrollBar::add-page:vertical,\n        QScrollBar::sub-page:vertical {{\n            background: transparent;\n            border: none;\n        }}\n        QScrollBar:horizontal {{\n            background: transparent;\n            border: none;\n            height: 0px;\n            margin: 0;\n        }}\n        QScrollBar::handle:horizontal,\n        QScrollBar::add-line:horizontal,\n        QScrollBar::sub-line:horizontal,\n        QScrollBar::add-page:horizontal,\n        QScrollBar::sub-page:horizontal {{\n            background: transparent;\n            border: none;\n            width: 0px;\n        }}\n        '
 
@@ -2428,22 +2436,55 @@ class MainWindow(QWidget):
         return f"\n        QLineEdit {{\n            background: transparent;\n            color: {FIELD_TEXT};\n            border: none;\n            padding: 0 2px;\n            font: 700 10px 'Segoe UI';\n        }}\n        QLineEdit:focus {{\n            border: none;\n        }}\n        QLineEdit::placeholder {{\n            color: {FIELD_TEXT};\n        }}\n        "
 
     def compact_input_style(self):
-        return f"\n        QLineEdit {{\n            background: {FIELD_BG};\n            color: {FIELD_TEXT};\n            border: 1px solid #2c3038;\n            border-radius: 12px;\n            padding: 0 6px;\n            font: 700 9px 'Segoe UI';\n        }}\n        QLineEdit:focus {{ border: 1px solid {BLUE}; }}\n        QLineEdit::placeholder {{ color: #6f7580; }}\n        "
-
+        return f"""
+        QLineEdit {{
+            background: {FIELD_BG};
+            color: {FIELD_TEXT};
+            border: 1px solid #30343d;
+            border-radius: 13px;
+            padding: 0 8px;
+            min-height: 30px;
+            font: 700 9px 'Segoe UI';
+        }}
+        QLineEdit:focus {{ border: 1px solid {BLUE}; }}
+        QLineEdit::placeholder {{ color: #6f7580; }}
+        """
     def make_primary_button(self, text, handler):
         btn = QPushButton(text)
         btn.setCursor(Qt.PointingHandCursor)
         btn.clicked.connect(handler)
-        btn.setStyleSheet(f"\n            QPushButton {{\n                background: {BLUE};\n                color: white;\n                border: none;\n                border-radius: 13px;\n                padding: 7px 14px;\n                font: 700 9px 'Segoe UI';\n            }}\n            QPushButton:hover {{ background: {BLUE}; }}\n            ")
+        btn.setMinimumHeight(30)
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {BLUE};
+                color: white;
+                border: 1px solid {BLUE};
+                border-radius: 13px;
+                padding: 7px 14px;
+                font: 700 9px 'Segoe UI';
+            }}
+            QPushButton:hover {{ background: {BLUE}; }}
+            QPushButton:pressed {{ background: {BLUE}; }}
+            """)
         return btn
-
     def make_secondary_button(self, text, handler):
         btn = QPushButton(text)
         btn.setCursor(Qt.PointingHandCursor)
         btn.clicked.connect(handler)
-        btn.setStyleSheet(f"\n            QPushButton {{\n                background: #24272d;\n                color: {TEXT};\n                border: 1px solid #30343d;\n                border-radius: 13px;\n                padding: 7px 12px;\n                font: 700 9px 'Segoe UI';\n            }}\n            QPushButton:hover {{ background: #2b3038; }}\n            ")
+        btn.setMinimumHeight(30)
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background: #24272d;
+                color: {TEXT};
+                border: 1px solid #30343d;
+                border-radius: 13px;
+                padding: 7px 12px;
+                font: 700 9px 'Segoe UI';
+            }}
+            QPushButton:hover {{ background: #2b3038; }}
+            QPushButton:pressed {{ background: #20242b; }}
+            """)
         return btn
-
     def round_icon_button_style(self):
         return f"\n        QPushButton {{\n            background: #24272d;\n            color: {TEXT};\n            border: 1px solid #30343d;\n            border-radius: 17px;\n            padding: 0;\n            font: 700 13px 'Segoe UI Emoji';\n        }}\n        QPushButton:hover {{ background: #2b3038; }}\n        "
 
@@ -2451,6 +2492,7 @@ class MainWindow(QWidget):
         if enabled:
             bg = accent
             fg = text_color or '#ffffff'
+            border = accent
             if hover is None:
                 if accent == BLUE:
                     hover = BLUE
@@ -2461,14 +2503,25 @@ class MainWindow(QWidget):
         else:
             bg = '#2d3138'
             fg = '#6e7480'
+            border = '#30343d'
             hover = '#2d3138'
-        return f"\n        QPushButton {{\n            background: {bg};\n            color: {fg};\n            border: none;\n            border-radius: 12px;\n            padding: 7px 12px;\n            font: 700 9px 'Segoe UI';\n        }}\n        QPushButton:hover {{ background: {hover}; }}\n        "
-
+        return f"""
+        QPushButton {{
+            background: {bg};
+            color: {fg};
+            border: 1px solid {border};
+            border-radius: 13px;
+            padding: 7px 12px;
+            font: 700 9px 'Segoe UI';
+        }}
+        QPushButton:hover {{ background: {hover}; }}
+        QPushButton:pressed {{ background: {hover}; }}
+        """
     def make_small_button(self, text, handler, accent=BLUE):
         btn = QPushButton(text)
         btn.setCursor(Qt.PointingHandCursor)
         btn.clicked.connect(handler)
-        btn.setMinimumHeight(28)
+        btn.setMinimumHeight(30)
         btn.setMinimumWidth(74)
         btn.setStyleSheet(self.small_button_style(True, accent=accent))
         return btn
