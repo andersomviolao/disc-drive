@@ -32,9 +32,48 @@ except Exception:
     winreg = None
 APP_NAME = 'disc-drive'
 APP_DIR_NAME = 'disc-drive'
-APP_VERSION = '3.0.42'
+APP_VERSION = '3.0.44'
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
+
+BTN_H = 28
+BTN_MIN_W = 80
+BTN_BORDER = 1
+BTN_RADIUS = BTN_H // 2
+
+INPUT_H = 28
+TIMER_INPUT_W = 42
+HEX_INPUT_H = 28
+POST_EDITOR_MIN_H = 80
+INPUT_BORDER = 1
+INPUT_RADIUS = INPUT_H // 2
+
+TOGGLE_W = 52
+TOGGLE_H = 28
+TOGGLE_BORDER = 1
+
+COLOR_BTN_SIZE = 28
+COLOR_BTN_BORDER = 1
+COLOR_BTN_RADIUS = COLOR_BTN_SIZE // 2
+
+AVATAR_SIZE = 46
+AVATAR_BORDER = 1
+
+COLOR_PREVIEW_SIZE = 28
+COLOR_PREVIEW_BORDER = 1
+COLOR_PREVIEW_RADIUS = COLOR_PREVIEW_SIZE // 2
+
+HUE_SLIDER_H = 14
+HUE_SLIDER_BORDER = 1
+HUE_SLIDER_RADIUS = HUE_SLIDER_H // 2
+
+COLOR_AREA_MIN_W = 200
+COLOR_AREA_H = 128
+COLOR_AREA_BORDER = 1
+COLOR_AREA_RADIUS = 14
+
+POPUP_BORDER = 1
+POPUP_RADIUS = 16
 
 def get_runtime_dir() -> Path:
     try:
@@ -1221,7 +1260,7 @@ class ToggleSwitch(QPushButton):
         self.setCheckable(True)
         self.setChecked(checked)
         self.setCursor(Qt.PointingHandCursor)
-        self.setFixedSize(52, 28)
+        self.setFixedSize(TOGGLE_W, TOGGLE_H)
         self.clicked.connect(lambda: self.toggled_visual.emit(self.isChecked()))
 
     def paintEvent(self, event):
@@ -1248,7 +1287,7 @@ class ColorSwatchButton(QPushButton):
         self._color = normalize_hex_color(hex_color)
         self.setCursor(Qt.PointingHandCursor)
         self.setToolTip('Embed color')
-        self.setFixedSize(28, 28)
+        self.setFixedSize(COLOR_BTN_SIZE, COLOR_BTN_SIZE)
         self.apply_style()
 
     def set_color(self, hex_color):
@@ -1257,7 +1296,7 @@ class ColorSwatchButton(QPushButton):
 
     def apply_style(self):
         border = '#ffffff' if self._hovered else '#30343d'
-        self.setStyleSheet(f'\n            QPushButton {{\n                background: {self._color};\n                border: 1px solid {border};\n                border-radius: 14px;\n            }}\n            ')
+        self.setStyleSheet(f'\n            QPushButton {{\n                background: {self._color};\n                border: {BTN_BORDER}px solid {border};\n                border-radius: {BTN_RADIUS}px;\n            }}\n            ')
 
     def enterEvent(self, event):
         self._hovered = True
@@ -1272,7 +1311,7 @@ class ColorSwatchButton(QPushButton):
 class AvatarPreview(QWidget):
     clicked = Signal()
 
-    def __init__(self, size=44, parent=None):
+    def __init__(self, size=AVATAR_SIZE, parent=None):
         super().__init__(parent)
         self._size = size
         self._pixmap = None
@@ -1316,7 +1355,7 @@ class AvatarPreview(QWidget):
             painter.drawPixmap(x, y, scaled)
         painter.setClipping(False)
         border_color = QColor('#ffffff' if self._hovered else '#30343d')
-        painter.setPen(QPen(border_color, 1))
+        painter.setPen(QPen(border_color, AVATAR_BORDER))
         painter.setBrush(Qt.NoBrush)
         painter.drawEllipse(rect)
         painter.end()
@@ -1329,7 +1368,7 @@ class ColorSpectrumBox(QWidget):
         self._hue = max(0.0, min(1.0, hue))
         self._sat = max(0.0, min(1.0, sat))
         self._val = max(0.0, min(1.0, val))
-        self.setMinimumSize(200, 128)
+        self.setMinimumSize(COLOR_AREA_MIN_W, COLOR_AREA_H)
         self.setCursor(Qt.CrossCursor)
 
     def set_hsv(self, hue, sat, val):
@@ -1347,7 +1386,7 @@ class ColorSpectrumBox(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         rect = self.rect().adjusted(1, 1, -1, -1)
         path = QPainterPath()
-        path.addRoundedRect(rect, 14, 14)
+        path.addRoundedRect(rect, COLOR_AREA_RADIUS, COLOR_AREA_RADIUS)
         painter.setClipPath(path)
         hue_color = QColor.fromHsvF(self._hue, 1.0, 1.0)
         painter.fillRect(rect, hue_color)
@@ -1361,7 +1400,7 @@ class ColorSpectrumBox(QWidget):
         painter.fillRect(rect, black_grad)
         painter.setClipping(False)
         pen = QPen(QColor('#30343d'))
-        pen.setWidth(1)
+        pen.setWidth(COLOR_AREA_BORDER)
         painter.setPen(pen)
         painter.setBrush(Qt.NoBrush)
         painter.drawPath(path)
@@ -1399,7 +1438,7 @@ class HueSlider(QWidget):
     def __init__(self, hue=0.0, parent=None):
         super().__init__(parent)
         self._hue = max(0.0, min(1.0, hue))
-        self.setFixedHeight(14)
+        self.setFixedHeight(HUE_SLIDER_H)
         self.setCursor(Qt.PointingHandCursor)
 
     def set_hue(self, hue):
@@ -1411,13 +1450,13 @@ class HueSlider(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         rect = self.rect().adjusted(1, 1, -1, -1)
         path = QPainterPath()
-        path.addRoundedRect(rect, 7, 7)
+        path.addRoundedRect(rect, HUE_SLIDER_RADIUS, HUE_SLIDER_RADIUS)
         grad = QLinearGradient(rect.topLeft(), rect.topRight())
         stops = [(0.0, '#ff0000'), (1 / 6, '#ffff00'), (2 / 6, '#00ff00'), (3 / 6, '#00ffff'), (4 / 6, '#0000ff'), (5 / 6, '#ff00ff'), (1.0, '#ff0000')]
         for pos, color in stops:
             grad.setColorAt(pos, QColor(color))
         painter.fillPath(path, grad)
-        painter.setPen(QPen(QColor('#2f343d'), 1))
+        painter.setPen(QPen(QColor('#2f343d'), HUE_SLIDER_BORDER))
         painter.drawPath(path)
         x = rect.left() + self._hue * rect.width()
         painter.setPen(QPen(QColor('#ffffff'), 2))
@@ -1461,13 +1500,13 @@ class EmbedColorPopup(QWidget):
         outer.setSpacing(0)
         panel = QFrame()
         panel.setObjectName('embedColorPopup')
-        panel.setStyleSheet(f"\n            QFrame#embedColorPopup {{\n                background: {PANEL};\n                border: 1px solid #23262d;\n                border-radius: 16px;\n            }}\n            QLabel {{\n                color: {TEXT};\n                font: 700 9px 'Segoe UI';\n                background: transparent;\n                border: none;\n            }}\n            QLineEdit {{\n                background: {FIELD_BG};\n                color: {FIELD_TEXT};\n                border: 1px solid #2c3038;\n                border-radius: 12px;\n                padding: 0 12px;\n                min-height: 28px;\n                font: 700 9px 'Segoe UI';\n            }}\n            QLineEdit:focus {{\n                border: 1px solid {BLUE};\n            }}\n            QLineEdit::placeholder {{\n                color: #6f7580;\n            }}\n            ")
+        panel.setStyleSheet(f"\n            QFrame#embedColorPopup {{\n                background: {PANEL};\n                border: {POPUP_BORDER}px solid #23262d;\n                border-radius: {POPUP_RADIUS}px;\n            }}\n            QLabel {{\n                color: {TEXT};\n                font: 700 9px 'Segoe UI';\n                background: transparent;\n                border: none;\n            }}\n            QLineEdit {{\n                background: {FIELD_BG};\n                color: {FIELD_TEXT};\n                border: {INPUT_BORDER}px solid #2c3038;\n                border-radius: {INPUT_RADIUS}px;\n                padding: 0 12px;\n                min-height: {HEX_INPUT_H}px;\n                font: 700 9px 'Segoe UI';\n            }}\n            QLineEdit:focus {{\n                border: {BTN_BORDER}px solid {BLUE};\n            }}\n            QLineEdit::placeholder {{\n                color: #6f7580;\n            }}\n            ")
         outer.addWidget(panel)
         root = QVBoxLayout(panel)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(10)
         self.spectrum = ColorSpectrumBox(self._hue, self._sat, self._val)
-        self.spectrum.setMinimumSize(200, 128)
+        self.spectrum.setMinimumSize(COLOR_AREA_MIN_W, COLOR_AREA_H)
         self.spectrum.colorChanged.connect(self.on_sv_changed)
         root.addWidget(self.spectrum)
         self.hue_slider = HueSlider(self._hue)
@@ -1485,12 +1524,12 @@ class EmbedColorPopup(QWidget):
         bottom.setContentsMargins(0, 0, 0, 0)
         bottom.setSpacing(10)
         self.preview = QLabel()
-        self.preview.setFixedSize(28, 28)
+        self.preview.setFixedSize(COLOR_PREVIEW_SIZE, COLOR_PREVIEW_SIZE)
         bottom.addWidget(self.preview, 0, Qt.AlignVCenter)
         self.hex_input = QLineEdit(self.selected_hex)
         self.hex_input.setPlaceholderText(BLUE)
         self.hex_input.setMaxLength(7)
-        self.hex_input.setFixedHeight(28)
+        self.hex_input.setFixedHeight(HEX_INPUT_H)
         self.hex_input.textChanged.connect(self.on_hex_text_changed)
         self.hex_input.editingFinished.connect(self.on_hex_editing_finished)
         bottom.addWidget(self.hex_input, 1, Qt.AlignVCenter)
@@ -1533,7 +1572,7 @@ class EmbedColorPopup(QWidget):
         self.activateWindow()
 
     def update_preview(self, hex_color):
-        self.preview.setStyleSheet(f'background:{hex_color}; border:1px solid #30343d; border-radius:14px;')
+        self.preview.setStyleSheet(f'background:{hex_color}; border:{COLOR_PREVIEW_BORDER}px solid #30343d; border-radius:{COLOR_PREVIEW_RADIUS}px;')
 
     def set_selected_hex(self, hex_color, sync_hsv=True, sync_hex=True, emit_live=True):
         normalized = normalize_hex_color(hex_color)
@@ -1608,7 +1647,7 @@ class RoundedPanel(QWidget):
         path.addRoundedRect(rect, 22, 22)
         painter.fillPath(path, QColor(PANEL))
         pen = QPen(QColor('#1c1d21'))
-        pen.setWidth(1)
+        pen.setWidth(COLOR_AREA_BORDER)
         painter.setPen(pen)
         painter.drawPath(path)
         painter.end()
@@ -1843,11 +1882,11 @@ class HomePage(PageBase):
         bottom.addStretch(1)
         bottom.setSpacing(8)
         self.pause_btn = self.window.make_small_button('Pause', self.window.toggle_monitoring, accent=BLUE)
-        self.pause_btn.setMinimumWidth(52)
+        self.pause_btn.setMinimumWidth(BTN_MIN_W)
         bottom.addWidget(self.pause_btn)
         self.cfg_btn = self.window.make_secondary_button('Settings', self.window.open_settings_page)
         self.cfg_btn.setToolTip('Settings')
-        self.cfg_btn.setMinimumWidth(52)
+        self.cfg_btn.setMinimumWidth(BTN_MIN_W)
         bottom.addWidget(self.cfg_btn)
         self.body.addLayout(bottom)
 
@@ -1893,7 +1932,7 @@ class PostTemplatePage(PageBase):
         top_row.addWidget(self.back_btn)
         top_row.addStretch(1)
         self.test_btn = self.window.make_small_button('Test Webhook', self.test_webhook)
-        self.test_btn.setMinimumWidth(52)
+        self.test_btn.setMinimumWidth(BTN_MIN_W)
         top_row.addWidget(self.test_btn)
         self.body.addLayout(top_row)
 
@@ -1915,18 +1954,18 @@ class PostTemplatePage(PageBase):
         profile_row = QHBoxLayout()
         profile_row.setContentsMargins(0, 0, 0, 0)
         profile_row.setSpacing(12)
-        self.avatar_preview = AvatarPreview(46)
+        self.avatar_preview = AvatarPreview(AVATAR_SIZE)
         self.avatar_preview.clicked.connect(self.choose_profile_image)
         profile_row.addWidget(self.avatar_preview, 0, Qt.AlignVCenter)
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText(APP_NAME)
-        self.name_input.setFixedHeight(28)
+        self.name_input.setFixedHeight(INPUT_H)
         self.name_input.setStyleSheet(self.window.input_style())
         self.name_input.editingFinished.connect(self.on_name_editing_finished)
         self.name_input.textChanged.connect(self.on_name_text_changed)
         profile_row.addWidget(self.name_input, 1)
         self.clear_profile_btn = self.window.make_small_button('Clear', self.remove_profile_image)
-        self.clear_profile_btn.setMinimumWidth(52)
+        self.clear_profile_btn.setMinimumWidth(BTN_MIN_W)
         self.clear_profile_btn.setToolTip('Clear current image and custom name')
         profile_row.addWidget(self.clear_profile_btn, 0, Qt.AlignVCenter)
         self.profile_card.content_layout.addLayout(profile_row)
@@ -1952,7 +1991,7 @@ class PostTemplatePage(PageBase):
         self.editor.setPlaceholderText('Type the post content here...')
         self.editor.setStyleSheet(self.window.post_editor_style())
         self.editor.textChanged.connect(self.on_editor_text_changed)
-        self.editor.setMinimumHeight(80)
+        self.editor.setMinimumHeight(POST_EDITOR_MIN_H)
         self.editor.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.content_card.content_layout.addWidget(self.editor, 1)
         self.help_label = QLabel('Variables: {filename}  •  {creation_str}  •  {upload_str}')
@@ -2209,7 +2248,7 @@ class SettingsPage(PageBase):
         self.timer_input = QLineEdit()
         self.timer_input.setValidator(QIntValidator(1, 999999, self))
         self.timer_input.setAlignment(Qt.AlignCenter)
-        self.timer_input.setFixedSize(42, 28)
+        self.timer_input.setFixedSize(TIMER_INPUT_W, INPUT_H)
         self.timer_input.setStyleSheet(self.window.compact_input_style())
         self.timer_input.editingFinished.connect(self.on_timer_input_finished)
         timer_layout.addWidget(self.timer_input, 0, Qt.AlignVCenter)
@@ -2416,23 +2455,23 @@ class MainWindow(QWidget):
         QLineEdit {{
             background: {FIELD_BG};
             color: {FIELD_TEXT};
-            border: 1px solid #30343d;
-            border-radius: 14px;
+            border: {BTN_BORDER}px solid #30343d;
+            border-radius: {INPUT_RADIUS}px;
             padding: 0 12px;
-            min-height: 28px;
+            min-height: {INPUT_H}px;
             font: 600 9px 'Segoe UI';
         }}
-        QLineEdit:focus {{ border: 1px solid {BLUE}; }}
+        QLineEdit:focus {{ border: {BTN_BORDER}px solid {BLUE}; }}
         QLineEdit::placeholder {{ color: #6f7580; }}
         """
     def scrollbar_style(self, selector='QScrollArea'):
         return f'\n        {selector} {{\n            background: transparent;\n            border: none;\n        }}\n        QScrollBar:vertical {{\n            background: transparent;\n            border: none;\n            width: 8px;\n            margin: 6px 0 6px 0;\n        }}\n        QScrollBar::handle:vertical {{\n            background: #2a2d34;\n            border: none;\n            border-radius: 4px;\n            min-height: 24px;\n        }}\n        QScrollBar::handle:vertical:hover {{\n            background: #343944;\n        }}\n        QScrollBar::handle:vertical:pressed {{\n            background: #3d4451;\n        }}\n        QScrollBar::add-line:vertical,\n        QScrollBar::sub-line:vertical {{\n            height: 0px;\n            background: transparent;\n            border: none;\n        }}\n        QScrollBar::add-page:vertical,\n        QScrollBar::sub-page:vertical {{\n            background: transparent;\n            border: none;\n        }}\n        QScrollBar:horizontal {{\n            background: transparent;\n            border: none;\n            height: 0px;\n            margin: 0;\n        }}\n        QScrollBar::handle:horizontal,\n        QScrollBar::add-line:horizontal,\n        QScrollBar::sub-line:horizontal,\n        QScrollBar::add-page:horizontal,\n        QScrollBar::sub-page:horizontal {{\n            background: transparent;\n            border: none;\n            width: 0px;\n        }}\n        '
 
     def text_edit_style(self):
-        return f"\n        QTextEdit {{\n            background: {FIELD_BG};\n            color: {FIELD_TEXT};\n            border: 1px solid #2c3038;\n            border-radius: 14px;\n            padding: 10px 12px;\n            font: 600 9px 'Segoe UI';\n        }}\n        QTextEdit:focus {{ border: 1px solid {BLUE}; }}\n        {self.scrollbar_style('QTextEdit')}\n        "
+        return f"\n        QTextEdit {{\n            background: {FIELD_BG};\n            color: {FIELD_TEXT};\n            border: 1px solid #2c3038;\n            border-radius: {BTN_RADIUS}px;\n            padding: 10px 12px;\n            font: 600 9px 'Segoe UI';\n        }}\n        QTextEdit:focus {{ border: {BTN_BORDER}px solid {BLUE}; }}\n        {self.scrollbar_style('QTextEdit')}\n        "
 
     def post_editor_style(self):
-        return f"\n        QTextEdit {{\n            background: {FIELD_BG};\n            color: {FIELD_TEXT};\n            border: 1px solid #2c3038;\n            border-radius: 14px;\n            padding: 10px 12px;\n            font: 600 9px 'Segoe UI';\n        }}\n        QTextEdit:focus {{ border: 1px solid {BLUE}; }}\n        {self.scrollbar_style('QTextEdit')}\n        "
+        return f"\n        QTextEdit {{\n            background: {FIELD_BG};\n            color: {FIELD_TEXT};\n            border: 1px solid #2c3038;\n            border-radius: {BTN_RADIUS}px;\n            padding: 10px 12px;\n            font: 600 9px 'Segoe UI';\n        }}\n        QTextEdit:focus {{ border: {BTN_BORDER}px solid {BLUE}; }}\n        {self.scrollbar_style('QTextEdit')}\n        "
 
     def preview_name_style(self):
         return f"\n        QLineEdit {{\n            background: transparent;\n            color: {FIELD_TEXT};\n            border: none;\n            padding: 0 2px;\n            font: 700 10px 'Segoe UI';\n        }}\n        QLineEdit:focus {{\n            border: none;\n        }}\n        QLineEdit::placeholder {{\n            color: {FIELD_TEXT};\n        }}\n        "
@@ -2442,27 +2481,27 @@ class MainWindow(QWidget):
         QLineEdit {{
             background: {FIELD_BG};
             color: {FIELD_TEXT};
-            border: 1px solid #30343d;
-            border-radius: 14px;
+            border: {BTN_BORDER}px solid #30343d;
+            border-radius: {INPUT_RADIUS}px;
             padding: 0 8px;
-            min-height: 28px;
+            min-height: {INPUT_H}px;
             font: 700 9px 'Segoe UI';
         }}
-        QLineEdit:focus {{ border: 1px solid {BLUE}; }}
+        QLineEdit:focus {{ border: {BTN_BORDER}px solid {BLUE}; }}
         QLineEdit::placeholder {{ color: #6f7580; }}
         """
     def make_primary_button(self, text, handler):
         btn = QPushButton(text)
         btn.setCursor(Qt.PointingHandCursor)
         btn.clicked.connect(handler)
-        btn.setFixedHeight(28)
-        btn.setMinimumWidth(52)
+        btn.setFixedHeight(BTN_H)
+        btn.setMinimumWidth(BTN_MIN_W)
         btn.setStyleSheet(f"""
             QPushButton {{
                 background: {BLUE};
                 color: white;
-                border: 1px solid {BLUE};
-                border-radius: 14px;
+                border: {BTN_BORDER}px solid {BLUE};
+                border-radius: {BTN_RADIUS}px;
                 padding: 0 12px;
                 font: 700 9px 'Segoe UI';
             }}
@@ -2474,14 +2513,14 @@ class MainWindow(QWidget):
         btn = QPushButton(text)
         btn.setCursor(Qt.PointingHandCursor)
         btn.clicked.connect(handler)
-        btn.setFixedHeight(28)
-        btn.setMinimumWidth(52)
+        btn.setFixedHeight(BTN_H)
+        btn.setMinimumWidth(BTN_MIN_W)
         btn.setStyleSheet(f"""
             QPushButton {{
                 background: #24272d;
                 color: {TEXT};
-                border: 1px solid #30343d;
-                border-radius: 14px;
+                border: {BTN_BORDER}px solid #30343d;
+                border-radius: {BTN_RADIUS}px;
                 padding: 0 12px;
                 font: 700 9px 'Segoe UI';
             }}
@@ -2490,7 +2529,7 @@ class MainWindow(QWidget):
             """)
         return btn
     def round_icon_button_style(self):
-        return f"\n        QPushButton {{\n            background: #24272d;\n            color: {TEXT};\n            border: 1px solid #30343d;\n            border-radius: 14px;\n            padding: 0;\n            font: 700 13px 'Segoe UI Emoji';\n        }}\n        QPushButton:hover {{ background: #2b3038; }}\n        "
+        return f"\n        QPushButton {{\n            background: #24272d;\n            color: {TEXT};\n            border: {BTN_BORDER}px solid #30343d;\n            border-radius: {BTN_RADIUS}px;\n            padding: 0;\n            font: 700 13px 'Segoe UI Emoji';\n        }}\n        QPushButton:hover {{ background: #2b3038; }}\n        "
 
     def small_button_style(self, enabled=True, accent=BLUE, hover=None, text_color=None):
         if enabled:
@@ -2513,8 +2552,8 @@ class MainWindow(QWidget):
         QPushButton {{
             background: {bg};
             color: {fg};
-            border: 1px solid {border};
-            border-radius: 14px;
+            border: {BTN_BORDER}px solid {border};
+            border-radius: {BTN_RADIUS}px;
             padding: 0 12px;
             font: 700 9px 'Segoe UI';
         }}
@@ -2525,8 +2564,8 @@ class MainWindow(QWidget):
         btn = QPushButton(text)
         btn.setCursor(Qt.PointingHandCursor)
         btn.clicked.connect(handler)
-        btn.setFixedHeight(28)
-        btn.setMinimumWidth(52)
+        btn.setFixedHeight(BTN_H)
+        btn.setMinimumWidth(BTN_MIN_W)
         btn.setStyleSheet(self.small_button_style(True, accent=accent))
         return btn
 
@@ -2720,8 +2759,8 @@ class TrayExitBubble(QWidget):
         self.exit_btn = QPushButton('Quit')
         self.exit_btn.setCursor(Qt.PointingHandCursor)
         self.exit_btn.clicked.connect(self.handle_exit)
-        self.exit_btn.setMinimumSize(52, 28)
-        self.exit_btn.setStyleSheet(f"\n            QPushButton {{\n                background: #24272d;\n                color: {TEXT};\n                border: 1px solid #30343d;\n                border-radius: 14px;\n                font: 700 9px 'Segoe UI';\n                padding: 0 12px;\n                text-align: center;\n            }}\n            QPushButton:hover {{\n                background: #2b3038;\n            }}\n            QPushButton:pressed {{\n                background: #20242b;\n            }}\n        ")
+        self.exit_btn.setMinimumSize(BTN_MIN_W, BTN_H)
+        self.exit_btn.setStyleSheet(f"\n            QPushButton {{\n                background: #24272d;\n                color: {TEXT};\n                border: {BTN_BORDER}px solid #30343d;\n                border-radius: {BTN_RADIUS}px;\n                font: 700 9px 'Segoe UI';\n                padding: 0 12px;\n                text-align: center;\n            }}\n            QPushButton:hover {{\n                background: #2b3038;\n            }}\n            QPushButton:pressed {{\n                background: #20242b;\n            }}\n        ")
         outer.addWidget(self.exit_btn)
         self.hide()
 
