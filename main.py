@@ -10,7 +10,6 @@ import requests
 import shutil
 import hashlib
 import datetime
-import traceback
 import subprocess
 import re
 import queue
@@ -26,14 +25,14 @@ except Exception:
 from send2trash import send2trash
 from PySide6.QtCore import Qt, Signal, QObject, QEasingCurve, QPropertyAnimation, QTimer, QRect, QSize, QRectF, QByteArray, QPoint, QBuffer, QIODevice
 from PySide6.QtGui import QColor, QCursor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap, QBrush, QLinearGradient, QIntValidator, QImage, QImageReader
-from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QSystemTrayIcon, QPushButton, QStackedWidget, QGraphicsOpacityEffect, QFileDialog, QScrollArea, QTextEdit, QSizePolicy, QGridLayout
+from PySide6.QtWidgets import QApplication, QWidget, QVBoxLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QSystemTrayIcon, QPushButton, QStackedWidget, QGraphicsOpacityEffect, QFileDialog, QScrollArea, QTextEdit, QSizePolicy
 try:
     import winreg
 except Exception:
     winreg = None
 APP_NAME = 'disc-drive'
 APP_DIR_NAME = 'disc-drive'
-APP_VERSION = '3.0.29'
+APP_VERSION = '3.0.30'
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -388,16 +387,6 @@ def current_webhook_identity_key(webhook_url: str | None=None) -> str:
 def webhook_defaults_match_current() -> bool:
     return bool(config.get('webhook_default_source', '')) and config.get('webhook_default_source', '') == current_webhook_identity_key()
 
-def aspect_fit_rect(target_rect: QRectF, source_width: float, source_height: float) -> QRectF:
-    if source_width <= 0 or source_height <= 0:
-        return target_rect
-    scale = min(target_rect.width() / source_width, target_rect.height() / source_height)
-    width = source_width * scale
-    height = source_height * scale
-    x = target_rect.x() + (target_rect.width() - width) / 2
-    y = target_rect.y() + (target_rect.height() - height) / 2
-    return QRectF(x, y, width, height)
-
 def save_window_position(widget):
     try:
         config['window_x'] = int(widget.x())
@@ -486,10 +475,6 @@ def square_pixmap_from_file(path: Path, size: int=256):
     if pixmap.isNull():
         return None
     return square_pixmap_from_pixmap(pixmap, size=size)
-_last_default_placeholder_status = None
-
-def cleanup_obsolete_avatar_files():
-    return
 
 def pixmap_to_data_uri(pixmap: QPixmap | None):
     try:
@@ -508,28 +493,30 @@ def pixmap_to_data_uri(pixmap: QPixmap | None):
     except Exception as exc:
         return None
 
-def delete_avatar_file(path: Path, log_name: str):
+def delete_avatar_file(path: Path):
     try:
         if path.exists():
             path.unlink()
     except Exception as exc:
         pass
 
-def ensure_default_profile_image(force_refresh: bool=True):
-    global _last_default_placeholder_status
+def create_default_profile_image() -> bool:
     try:
         FILES_DIR.mkdir(parents=True, exist_ok=True)
-        usable = is_usable_image_file(DEFAULT_PLACEHOLDER_IMAGE_FILE)
-        state = 'ready' if usable else 'missing'
-        file_key = 'missing'
-        if DEFAULT_PLACEHOLDER_IMAGE_FILE.exists():
-            stat = DEFAULT_PLACEHOLDER_IMAGE_FILE.stat()
-            file_key = f'{stat.st_size}:{stat.st_mtime_ns}'
-        status_key = f'{state}:{file_key}'
-        if force_refresh or _last_default_placeholder_status != status_key:
-            _last_default_placeholder_status = status_key
-        return usable
-    except Exception as exc:
+        pixmap = QPixmap(256, 256)
+        pixmap.fill(QColor(BLUE))
+        return pixmap.save(str(DEFAULT_PLACEHOLDER_IMAGE_FILE), 'PNG')
+    except Exception:
+        return False
+
+def ensure_default_profile_image(force_refresh: bool=True):
+    try:
+        FILES_DIR.mkdir(parents=True, exist_ok=True)
+        if is_usable_image_file(DEFAULT_PLACEHOLDER_IMAGE_FILE):
+            return True
+        delete_avatar_file(DEFAULT_PLACEHOLDER_IMAGE_FILE)
+        return create_default_profile_image() and is_usable_image_file(DEFAULT_PLACEHOLDER_IMAGE_FILE)
+    except Exception:
         return False
 
 def get_avatar_mode() -> str:
@@ -543,22 +530,19 @@ def get_avatar_mode() -> str:
     return AVATAR_MODE_WEBHOOK
 
 def save_custom_profile_image(source_path: str):
-    source = Path(source_path)
-    cropped = square_pixmap_from_file(source, size=256)
+    cropped = square_pixmap_from_file(Path(source_path), size=256)
     if cropped is None:
         return (False, 'Could not open the selected image.')
     AVATAR_IMAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
     if not cropped.save(str(AVATAR_IMAGE_FILE), 'PNG'):
         return (False, 'Could not save the profile image.')
-    cleanup_obsolete_avatar_files()
     config['avatar_mode'] = AVATAR_MODE_MANUAL
     reset_avatar_sync_cache()
     save_config()
     return (True, str(AVATAR_IMAGE_FILE))
 
 def remove_custom_profile_image():
-    delete_avatar_file(AVATAR_IMAGE_FILE, 'webhook_avatar_deleted')
-    cleanup_obsolete_avatar_files()
+    delete_avatar_file(AVATAR_IMAGE_FILE)
     config['avatar_mode'] = AVATAR_MODE_DEFAULT
     reset_avatar_sync_cache()
     save_config()
@@ -614,7 +598,6 @@ def should_refresh_webhook_avatar_cache(webhook_url: str | None=None, force: boo
 def refresh_avatar_state(webhook_url: str | None=None, force_fetch: bool=False, sync_remote: bool=False):
     webhook_url = (webhook_url or config.get('webhook', '') or '').strip()
     ensure_default_profile_image(force_refresh=False)
-    cleanup_obsolete_avatar_files()
     cache_updated = False
     if webhook_url and should_refresh_webhook_avatar_cache(webhook_url, force=force_fetch):
         cache_updated = capture_webhook_defaults(webhook_url)
@@ -630,8 +613,7 @@ def capture_webhook_defaults(webhook_url: str | None=None):
     try:
         response = requests.get(webhook_url, timeout=12)
         if response.status_code != 200:
-            delete_avatar_file(AVATAR_IMAGE_FILE, 'webhook_avatar_deleted')
-            cleanup_obsolete_avatar_files()
+            delete_avatar_file(AVATAR_IMAGE_FILE)
             config['webhook_default_source'] = identity_key
             config['avatar_mode'] = AVATAR_MODE_DEFAULT
             save_config()
@@ -649,23 +631,19 @@ def capture_webhook_defaults(webhook_url: str | None=None):
                 if pixmap.loadFromData(avatar_response.content):
                     squared = square_pixmap_from_pixmap(pixmap, size=256) or pixmap
                     avatar_saved = squared.save(str(AVATAR_IMAGE_FILE), 'PNG')
-                if avatar_saved:
-                    pass
-                else:
-                    delete_avatar_file(AVATAR_IMAGE_FILE, 'webhook_avatar_deleted')
+                if not avatar_saved:
+                    delete_avatar_file(AVATAR_IMAGE_FILE)
             else:
-                delete_avatar_file(AVATAR_IMAGE_FILE, 'webhook_avatar_deleted')
+                delete_avatar_file(AVATAR_IMAGE_FILE)
         else:
-            delete_avatar_file(AVATAR_IMAGE_FILE, 'webhook_avatar_deleted')
-        cleanup_obsolete_avatar_files()
+            delete_avatar_file(AVATAR_IMAGE_FILE)
         config['webhook_default_source'] = identity_key
         config['avatar_mode'] = AVATAR_MODE_WEBHOOK if avatar_saved else AVATAR_MODE_DEFAULT
         reset_avatar_sync_cache()
         save_config()
         return avatar_saved
     except Exception as exc:
-        delete_avatar_file(AVATAR_IMAGE_FILE, 'webhook_avatar_deleted')
-        cleanup_obsolete_avatar_files()
+        delete_avatar_file(AVATAR_IMAGE_FILE)
         config['webhook_default_source'] = identity_key
         config['avatar_mode'] = AVATAR_MODE_DEFAULT
         save_config()
@@ -695,12 +673,9 @@ def sync_webhook_avatar(force: bool=False):
         return True
     avatar_file = get_effective_avatar_file()
     avatar_payload = image_file_to_data_uri(avatar_file) if avatar_file is not None else None
-    source = avatar_file.name if avatar_file is not None else 'none'
-    last_status_code = None
     try:
         for attempt in range(3):
             response = requests.patch(webhook_url, json={'avatar': avatar_payload}, timeout=15)
-            last_status_code = response.status_code
             if response.status_code in (200, 204):
                 _last_avatar_sync_key = sync_key
                 time.sleep(0.35)
@@ -1037,7 +1012,7 @@ def get_file_hash(path):
 
 def file_is_free(path):
     try:
-        with open(path, 'rb+'):
+        with open(path, 'rb'):
             return True
     except Exception:
         return False
@@ -1119,7 +1094,6 @@ def finalize_sent_file(path, filename, file_hash, upload_str):
         sent_history.append({'file': filename, 'hash': file_hash, 'date': upload_str})
     save_json(LOG_FILE, sent_history)
     delete_after_send = bool(config.get('delete_after_send', True))
-    thumbnail_saved = reserved_thumbnail_path is not None
     if reserved_thumbnail_path is not None:
         signals.thumbnail_changed.emit(str(reserved_thumbnail_path), True)
         queue_thumbnail_generation(path, reserved_thumbnail_path, delete_after_send=delete_after_send)
@@ -1210,7 +1184,6 @@ def send_now_manual():
         if not sent_any:
             signals.toast.emit('info', 'No file is available to send right now.')
     except Exception as exc:
-        traceback.print_exc()
         signals.toast.emit('error', 'Send now failed.')
     finally:
         send_lock.release()
@@ -1226,8 +1199,6 @@ def monitoring_loop():
                     now = time.time()
                     files = [os.path.join(folder, f) for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f)) and is_supported_media_file(f)]
                     ready = [p for p in files if now - get_file_creation_timestamp(p) >= get_wait_time_seconds()]
-                    if files or ready:
-                        pass
                     for file in sorted(ready, key=get_file_creation_timestamp):
                         if stop_event.is_set() or not monitoring:
                             break
@@ -1238,7 +1209,7 @@ def monitoring_loop():
                                     break
                                 time.sleep(1)
                 except Exception as exc:
-                    traceback.print_exc()
+                    pass
                 finally:
                     send_lock.release()
         for _ in range(MONITOR_CHECK_INTERVAL):
@@ -1999,8 +1970,7 @@ class WebhookPage(PageBase):
         webhook_changed = previous_webhook != text
         config['webhook'] = text
         if webhook_changed:
-            delete_avatar_file(AVATAR_IMAGE_FILE, 'webhook_avatar_deleted')
-            cleanup_obsolete_avatar_files()
+            delete_avatar_file(AVATAR_IMAGE_FILE)
             config['webhook_default_source'] = ''
             config['avatar_mode'] = AVATAR_MODE_WEBHOOK
         reset_avatar_sync_cache()
@@ -2421,7 +2391,6 @@ class MainWindow(QWidget):
         self.is_dragging = False
         self.anim = None
         self._drag_origin = None
-        self._geometry_fix_pending = False
         self._enforcing_geometry = False
         self.setWindowTitle(f'{APP_NAME} v{APP_VERSION}')
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint | Qt.MSWindowsFixedSizeDialogHint)
@@ -2611,16 +2580,6 @@ class MainWindow(QWidget):
         finally:
             self._enforcing_geometry = False
 
-    def schedule_geometry_fix(self):
-        if self._geometry_fix_pending:
-            return
-        self._geometry_fix_pending = True
-        QTimer.singleShot(0, self.apply_scheduled_geometry_fix)
-
-    def apply_scheduled_geometry_fix(self):
-        self._geometry_fix_pending = False
-        self.ensure_expected_geometry()
-
     def hide_to_tray(self):
         self.save_post_template_if_needed()
         save_window_position(self)
@@ -2780,27 +2739,10 @@ class TrayController(QObject):
         self.sync_pause_action(monitoring)
         self.tray.show()
 
-    def start_send_now(self):
-        thread = threading.Thread(target=send_now_manual, daemon=True)
-        thread.start()
-
-    def toggle_monitoring(self):
-        global monitoring
-        monitoring = not monitoring
-        config['monitoring_enabled'] = monitoring
-        save_config()
-        signals.status_changed.emit(monitoring)
-
-    def open_settings(self):
-        self.window.open_settings_page()
-        self.window.show_near_tray()
-
     def refresh_tray_icon(self, force=False):
         sending = sending_event.is_set()
         active = monitoring
         if sending:
-            if self._last_static_state != 'sending':
-                pass
             self.rotation += 0.35
             self.tray.setIcon(create_tray_icon(active, sending=True, rotation=self.rotation))
             self._last_static_state = 'sending'
@@ -2904,7 +2846,6 @@ def ensure_first_run(window: MainWindow):
 if __name__ == '__main__':
     BASE_DIR.mkdir(parents=True, exist_ok=True)
     FILES_DIR.mkdir(parents=True, exist_ok=True)
-    cleanup_obsolete_avatar_files()
     ensure_thumbs_dir()
     save_config()
     app = QApplication(sys.argv)
