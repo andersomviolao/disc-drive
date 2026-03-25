@@ -32,7 +32,7 @@ except Exception:
     winreg = None
 APP_NAME = 'disc-drive'
 APP_DIR_NAME = 'disc-drive'
-APP_VERSION = '3.0.30'
+APP_VERSION = '3.0.31'
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -1878,16 +1878,12 @@ class HomePage(PageBase):
         header.addWidget(self.cfg_btn, 0, Qt.AlignTop | Qt.AlignRight)
         self.layout().insertLayout(0, header)
         self.layout().removeItem(self.layout().itemAt(1))
-        self.webhook_row = HomeValueRow(self.window, 'Webhook', 'Edit', self.window.open_webhook_page)
-        self.body.addWidget(self.webhook_row)
-        self.folder_row = HomeValueRow(self.window, 'Watched Folder', 'Edit', self.window.open_folder_page)
-        self.body.addWidget(self.folder_row)
         self.history_wrap = QWidget()
         self.history_wrap.setStyleSheet('background: transparent;')
         self.history_layout = QVBoxLayout(self.history_wrap)
         self.history_layout.setContentsMargins(0, 0, 0, 0)
         self.history_layout.setSpacing(6)
-        self.history_label = QLabel('History')
+        self.history_label = QLabel('Last sent')
         self.history_label.setStyleSheet(f"color:{TEXT}; font: 700 9px 'Segoe UI'; background: transparent; border: none;")
         self.history_layout.addWidget(self.history_label)
         self.thumb_strip = ThumbnailStrip(parent=self.history_wrap)
@@ -1908,8 +1904,6 @@ class HomePage(PageBase):
         self.body.addLayout(bottom)
 
     def refresh(self):
-        self.webhook_row.set_value(config.get('webhook', ''), 'No webhook configured')
-        self.folder_row.set_value(config.get('folder', ''), 'No folder selected')
         self.refresh_thumbnails()
         self.update_pause_visual()
 
@@ -2266,6 +2260,42 @@ class SettingsPage(PageBase):
         self.scroll_body.setSpacing(10)
         self.scroll.setWidget(self.scroll_host)
         self.body.addWidget(self.scroll, 1)
+
+        webhook_wrap = QWidget()
+        webhook_wrap.setStyleSheet('background: transparent;')
+        webhook_layout = QHBoxLayout(webhook_wrap)
+        webhook_layout.setContentsMargins(0, 0, 0, 0)
+        webhook_layout.setSpacing(6)
+        self.webhook_input = QLineEdit()
+        self.webhook_input.setPlaceholderText('https://discord.com/api/webhooks/...')
+        self.webhook_input.setFixedSize(226, 28)
+        self.webhook_input.setStyleSheet(self.window.compact_input_style())
+        self.webhook_input.returnPressed.connect(self.save_webhook)
+        webhook_layout.addWidget(self.webhook_input, 0, Qt.AlignVCenter)
+        self.webhook_save_btn = self.window.make_small_button('Save', self.save_webhook, accent=BLUE)
+        self.webhook_save_btn.setFixedSize(58, 28)
+        webhook_layout.addWidget(self.webhook_save_btn, 0, Qt.AlignVCenter)
+        self.scroll_body.addWidget(SettingRow('Webhook', 'Paste the full Discord webhook URL here.', webhook_wrap))
+
+        folder_wrap = QWidget()
+        folder_wrap.setStyleSheet('background: transparent;')
+        folder_layout = QHBoxLayout(folder_wrap)
+        folder_layout.setContentsMargins(0, 0, 0, 0)
+        folder_layout.setSpacing(6)
+        self.folder_input = QLineEdit()
+        self.folder_input.setPlaceholderText('No folder selected')
+        self.folder_input.setFixedSize(150, 28)
+        self.folder_input.setReadOnly(True)
+        self.folder_input.setStyleSheet(self.window.compact_input_style())
+        folder_layout.addWidget(self.folder_input, 0, Qt.AlignVCenter)
+        self.folder_browse_btn = self.window.make_small_button('Browse', self.browse_folder)
+        self.folder_browse_btn.setFixedSize(62, 28)
+        folder_layout.addWidget(self.folder_browse_btn, 0, Qt.AlignVCenter)
+        self.folder_save_btn = self.window.make_small_button('Save', self.save_folder, accent=BLUE)
+        self.folder_save_btn.setFixedSize(58, 28)
+        folder_layout.addWidget(self.folder_save_btn, 0, Qt.AlignVCenter)
+        self.scroll_body.addWidget(SettingRow('Watched Folder', 'Choose the local folder that the app will monitor.', folder_wrap))
+
         self.delete_toggle = ToggleSwitch(config.get('delete_after_send', True))
         self.delete_toggle.clicked.connect(self.toggle_delete_after_send)
         self.scroll_body.addWidget(SettingRow('Delete after send', 'On: moves the file to the Recycle Bin. Off: keeps the file and avoids duplicates through the log.', self.delete_toggle))
@@ -2314,6 +2344,8 @@ class SettingsPage(PageBase):
         self.scroll_body.addStretch(1)
 
     def refresh(self):
+        self.webhook_input.setText(config.get('webhook', ''))
+        self.folder_input.setText(config.get('folder', ''))
         self.start_toggle.setChecked(config.get('start_with_windows', False))
         self.delete_toggle.setChecked(config.get('delete_after_send', True))
         self.timer_toggle.setChecked(get_timer_enabled())
@@ -2330,6 +2362,42 @@ class SettingsPage(PageBase):
     def update_timer_visibility(self):
         visible = self.timer_toggle.isChecked()
         self.timer_input.setVisible(visible)
+
+    def save_webhook(self):
+        text = self.webhook_input.text().strip()
+        if not is_valid_webhook(text):
+            self.window.show_message('error', 'Paste a valid webhook URL.')
+            return
+        previous_webhook = str(config.get('webhook', '') or '').strip()
+        webhook_changed = previous_webhook != text
+        config['webhook'] = text
+        if webhook_changed:
+            delete_avatar_file(AVATAR_IMAGE_FILE)
+            config['webhook_default_source'] = ''
+            config['avatar_mode'] = AVATAR_MODE_WEBHOOK
+        reset_avatar_sync_cache()
+        save_config()
+        refresh_avatar_state(text, force_fetch=webhook_changed or get_avatar_mode() == AVATAR_MODE_WEBHOOK, sync_remote=True)
+        self.window.show_message('success', 'Webhook updated.')
+
+    def browse_folder(self):
+        current = self.folder_input.text().strip() or config.get('folder', '') or str(Path.home())
+        selected = QFileDialog.getExistingDirectory(self.window, 'Select Watched Folder', current, QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks)
+        if selected:
+            self.folder_input.setText(selected)
+
+    def save_folder(self):
+        text = self.folder_input.text().strip().strip('"')
+        if not text:
+            self.window.show_message('error', 'Select a valid folder.')
+            return
+        path = Path(text)
+        if not path.exists() or not path.is_dir():
+            self.window.show_message('error', 'The selected folder does not exist.')
+            return
+        config['folder'] = str(path)
+        save_config()
+        self.window.show_message('success', 'Watched folder updated.')
 
     def toggle_startup(self):
         enabled = self.start_toggle.isChecked()
