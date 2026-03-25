@@ -32,7 +32,7 @@ except Exception:
     winreg = None
 APP_NAME = 'disc-drive'
 APP_DIR_NAME = 'disc-drive'
-APP_VERSION = '3.0.31'
+APP_VERSION = '3.0.32'
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -2228,15 +2228,18 @@ class SettingRow(QFrame):
         root.setSpacing(10)
         left = QVBoxLayout()
         left.setSpacing(2)
-        t = QLabel(title)
-        t.setStyleSheet(f"color:{TEXT}; font: 700 10px 'Segoe UI';")
-        left.addWidget(t)
-        s = QLabel(subtitle)
-        s.setWordWrap(True)
-        s.setStyleSheet(f"color:{MUTED}; font: 500 9px 'Segoe UI';")
-        left.addWidget(s)
+        self.title_label = QLabel(title)
+        self.title_label.setStyleSheet(f"color:{TEXT}; font: 700 10px 'Segoe UI';")
+        left.addWidget(self.title_label)
+        self.subtitle_label = QLabel(subtitle)
+        self.subtitle_label.setWordWrap(True)
+        self.subtitle_label.setStyleSheet(f"color:{MUTED}; font: 500 9px 'Segoe UI';")
+        left.addWidget(self.subtitle_label)
         root.addLayout(left, 1)
         root.addWidget(right_widget, 0, Qt.AlignVCenter)
+
+    def set_subtitle(self, subtitle):
+        self.subtitle_label.setText(subtitle)
 
 class SettingsPage(PageBase):
 
@@ -2281,20 +2284,10 @@ class SettingsPage(PageBase):
         folder_wrap.setStyleSheet('background: transparent;')
         folder_layout = QHBoxLayout(folder_wrap)
         folder_layout.setContentsMargins(0, 0, 0, 0)
-        folder_layout.setSpacing(6)
-        self.folder_input = QLineEdit()
-        self.folder_input.setPlaceholderText('No folder selected')
-        self.folder_input.setFixedSize(150, 28)
-        self.folder_input.setReadOnly(True)
-        self.folder_input.setStyleSheet(self.window.compact_input_style())
-        folder_layout.addWidget(self.folder_input, 0, Qt.AlignVCenter)
         self.folder_browse_btn = self.window.make_small_button('Browse', self.browse_folder)
-        self.folder_browse_btn.setFixedSize(62, 28)
-        folder_layout.addWidget(self.folder_browse_btn, 0, Qt.AlignVCenter)
-        self.folder_save_btn = self.window.make_small_button('Save', self.save_folder, accent=BLUE)
-        self.folder_save_btn.setFixedSize(58, 28)
-        folder_layout.addWidget(self.folder_save_btn, 0, Qt.AlignVCenter)
-        self.scroll_body.addWidget(SettingRow('Watched Folder', 'Choose the local folder that the app will monitor.', folder_wrap))
+        folder_layout.addWidget(self.folder_browse_btn)
+        self.watched_folder_row = SettingRow('Watched Folder', '', folder_wrap)
+        self.scroll_body.addWidget(self.watched_folder_row)
 
         self.delete_toggle = ToggleSwitch(config.get('delete_after_send', True))
         self.delete_toggle.clicked.connect(self.toggle_delete_after_send)
@@ -2345,7 +2338,7 @@ class SettingsPage(PageBase):
 
     def refresh(self):
         self.webhook_input.setText(config.get('webhook', ''))
-        self.folder_input.setText(config.get('folder', ''))
+        self.update_folder_row_subtitle()
         self.start_toggle.setChecked(config.get('start_with_windows', False))
         self.delete_toggle.setChecked(config.get('delete_after_send', True))
         self.timer_toggle.setChecked(get_timer_enabled())
@@ -2380,23 +2373,23 @@ class SettingsPage(PageBase):
         refresh_avatar_state(text, force_fetch=webhook_changed or get_avatar_mode() == AVATAR_MODE_WEBHOOK, sync_remote=True)
         self.window.show_message('success', 'Webhook updated.')
 
-    def browse_folder(self):
-        current = self.folder_input.text().strip() or config.get('folder', '') or str(Path.home())
-        selected = QFileDialog.getExistingDirectory(self.window, 'Select Watched Folder', current, QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks)
-        if selected:
-            self.folder_input.setText(selected)
+    def update_folder_row_subtitle(self):
+        folder = str(config.get('folder', '') or '').strip()
+        subtitle = folder if folder else 'No folder selected.'
+        self.watched_folder_row.set_subtitle(subtitle)
 
-    def save_folder(self):
-        text = self.folder_input.text().strip().strip('"')
-        if not text:
-            self.window.show_message('error', 'Select a valid folder.')
+    def browse_folder(self):
+        current = str(config.get('folder', '') or '').strip() or str(Path.home())
+        selected = QFileDialog.getExistingDirectory(self.window, 'Select Watched Folder', current, QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks)
+        if not selected:
             return
-        path = Path(text)
+        path = Path(selected)
         if not path.exists() or not path.is_dir():
             self.window.show_message('error', 'The selected folder does not exist.')
             return
         config['folder'] = str(path)
         save_config()
+        self.update_folder_row_subtitle()
         self.window.show_message('success', 'Watched folder updated.')
 
     def toggle_startup(self):
