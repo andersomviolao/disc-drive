@@ -55,7 +55,7 @@ except Exception:
 
 APP_NAME = "disc-drive"
 APP_DIR_NAME = "disc-drive"
-APP_VERSION = "3.0.24"
+APP_VERSION = "3.0.25"
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -632,6 +632,32 @@ def get_effective_avatar_file() -> Path | None:
     if should_use_local_default_avatar():
         return DEFAULT_PLACEHOLDER_IMAGE_FILE
     return None
+
+
+def should_refresh_webhook_avatar_cache(webhook_url: str | None = None, force: bool = False) -> bool:
+    webhook_url = (webhook_url or config.get("webhook", "") or "").strip()
+    if not webhook_url:
+        return False
+    if force:
+        return True
+    identity_key = current_webhook_identity_key(webhook_url)
+    if config.get("webhook_default_source", "") != identity_key:
+        return True
+    avatar_mode = str(config.get("avatar_mode", AVATAR_MODE_AUTO) or AVATAR_MODE_AUTO).strip().lower()
+    if avatar_mode == AVATAR_MODE_DEFAULT:
+        return False
+    return not is_usable_image_file(WEBHOOK_DEFAULT_PROFILE_IMAGE_FILE)
+
+
+def refresh_avatar_state(webhook_url: str | None = None, force_fetch: bool = False, sync_remote: bool = False):
+    webhook_url = (webhook_url or config.get("webhook", "") or "").strip()
+    ensure_default_profile_image(force_refresh=False)
+    cache_updated = False
+    if webhook_url and should_refresh_webhook_avatar_cache(webhook_url, force=force_fetch):
+        cache_updated = capture_webhook_defaults(webhook_url)
+    if sync_remote and webhook_url:
+        return sync_webhook_avatar(force=True)
+    return cache_updated if webhook_url else should_use_local_default_avatar() or should_use_generated_default_avatar()
 
 
 def capture_webhook_defaults(webhook_url: str | None = None):
@@ -2312,8 +2338,7 @@ class WebhookPage(PageBase):
         config["webhook"] = text
         reset_avatar_sync_cache()
         save_config()
-        capture_webhook_defaults(text)
-        sync_webhook_avatar(force=True)
+        refresh_avatar_state(text, force_fetch=True, sync_remote=True)
         self.window.show_message("success", "Webhook updated.")
         self.window.go_home()
 
@@ -3496,6 +3521,7 @@ if __name__ == "__main__":
     ensure_default_profile_image(force_refresh=True)
 
     controller = TrayController(app)
+    refresh_avatar_state(force_fetch=False, sync_remote=False)
     debug_log("application_qt_created")
     ensure_first_run(controller.window)
 
