@@ -32,7 +32,7 @@ except Exception:
     winreg = None
 APP_NAME = 'disc-drive'
 APP_DIR_NAME = 'disc-drive'
-APP_VERSION = '3.0.33'
+APP_VERSION = '3.0.34'
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -2349,10 +2349,29 @@ class SettingsPage(PageBase):
         visible = self.timer_toggle.isChecked()
         self.timer_input.setVisible(visible)
 
+    def format_webhook_subtitle(self, webhook: str) -> str:
+        webhook = str(webhook or '').strip()
+        if not webhook:
+            return 'No webhook set.'
+        prefixes = (
+            'https://discord.com/api/webhooks/',
+            'https://discordapp.com/api/webhooks/',
+        )
+        for prefix in prefixes:
+            if webhook.startswith(prefix):
+                rest = webhook[len(prefix):]
+                if len(rest) <= 22:
+                    return webhook
+                return f"{prefix}{rest[:8]}...{rest[-8:]}"
+        if len(webhook) <= 52:
+            return webhook
+        return f"{webhook[:36]}...{webhook[-10:]}"
+
     def update_webhook_row_subtitle(self):
         webhook = str(config.get('webhook', '') or '').strip()
-        subtitle = webhook if webhook else 'No webhook set.'
+        subtitle = self.format_webhook_subtitle(webhook)
         self.webhook_row.set_subtitle(subtitle)
+        self.webhook_row.subtitle_label.setToolTip(webhook)
 
     def paste_webhook(self):
         clipboard = QApplication.clipboard()
