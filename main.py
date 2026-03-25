@@ -1800,7 +1800,8 @@ class ExternalScrollPane(QWidget):
         self.scrollbar.setValue(0)
 
     def scrollbar_parent(self):
-        return self.parentWidget() or self
+        overlay_parent = getattr(self.window, 'panel', None) or self.window
+        return overlay_parent or self.parentWidget() or self
 
     def ensure_scrollbar_parent(self):
         target_parent = self.scrollbar_parent()
