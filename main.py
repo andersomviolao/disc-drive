@@ -32,7 +32,7 @@ except Exception:
     winreg = None
 APP_NAME = 'disc-drive'
 APP_DIR_NAME = 'disc-drive'
-APP_VERSION = '3.0.56'
+APP_VERSION = '3.0.57'
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -130,9 +130,10 @@ PAGE_SKELETON_TOP_ROW_MARGINS = (0, 0, 0, 0)
 PAGE_SKELETON_TOP_ROW_SPACING = 8
 
 PAGE_SKELETON_BODY_MARGINS = (0, 0, 0, 0)
-PAGE_SKELETON_BODY_SECTION_SPACING = 10
+PAGE_SKELETON_SECTION_STACK_SPACING = 10
+PAGE_SKELETON_BODY_SECTION_SPACING = PAGE_SKELETON_SECTION_STACK_SPACING
 PAGE_SKELETON_SCROLL_CONTENT_MARGINS = (0, 0, 0, 0)
-PAGE_SKELETON_SCROLL_CONTENT_SPACING = 10
+PAGE_SKELETON_SCROLL_CONTENT_SPACING = PAGE_SKELETON_SECTION_STACK_SPACING
 PAGE_SKELETON_HISTORY_MARGINS = (0, 0, 0, 0)
 PAGE_SKELETON_HISTORY_SPACING = 6
 
@@ -188,7 +189,7 @@ CARD_BORDER_W = 1
 CARD_RADIUS = 16
 CARD_PADDING_X = 14
 CARD_PADDING_Y = 12
-CARD_STACK_SPACING = 10
+CARD_STACK_SPACING = PAGE_SKELETON_SECTION_STACK_SPACING
 CARD_TEXT_SPACING = 2
 CARD_CONTENT_SPACING = 10
 CARD_PROFILE_MIN_H = 108
@@ -209,7 +210,7 @@ PAGE_SKELETON_SUBTITLE_FONT_WEIGHT = FONT_WEIGHT_MEDIUM
 PAGE_SKELETON_CARD_FRAME_MARGINS = (CARD_PADDING_X, CARD_PADDING_Y, CARD_PADDING_X, CARD_PADDING_Y)
 PAGE_SKELETON_CARD_TEXT_SPACING = CARD_TEXT_SPACING
 PAGE_SKELETON_CARD_CONTENT_SPACING = CARD_CONTENT_SPACING
-PAGE_SKELETON_CARD_STACK_SPACING = CARD_STACK_SPACING
+PAGE_SKELETON_CARD_STACK_SPACING = PAGE_SKELETON_SECTION_STACK_SPACING
 PAGE_SKELETON_CARD_MIN_H = 0
 PAGE_SKELETON_PROFILE_CARD_MIN_H = CARD_PROFILE_MIN_H
 PAGE_SKELETON_POST_CARD_MIN_H = CARD_POST_CONTENT_MIN_H
@@ -2180,7 +2181,7 @@ class HomePage(PageBase):
         top_row.addWidget(self.cfg_btn)
         self.body.addLayout(top_row)
 
-        self.make_page_scroll_area(self.window, spacing=PAGE_SKELETON_SCROLL_CONTENT_SPACING)
+        self.make_page_scroll_area(self.window)
 
         self.history_wrap = QWidget()
         self.history_wrap.setStyleSheet(transparent_row_style())
@@ -2277,7 +2278,7 @@ class PostTemplatePage(PageBase):
         top_row.addWidget(self.test_btn)
         self.body.addLayout(top_row)
 
-        self.make_page_scroll_area(self.window, spacing=PAGE_SKELETON_CARD_STACK_SPACING)
+        self.make_page_scroll_area(self.window)
 
         self.profile_card = CardSection('Webhook Profile', 'Choose the avatar, set the webhook name, or clear the current custom data.')
         self.profile_card.setMinimumHeight(PAGE_SKELETON_PROFILE_CARD_MIN_H)
@@ -2527,7 +2528,7 @@ class SettingsPage(PageBase):
         back_row.addWidget(self.back_btn)
         back_row.addStretch(1)
         self.body.addLayout(back_row)
-        self.make_page_scroll_area(self.window, spacing=PAGE_SKELETON_CARD_STACK_SPACING)
+        self.make_page_scroll_area(self.window)
 
         webhook_wrap = QWidget()
         webhook_wrap.setStyleSheet(transparent_row_style())
