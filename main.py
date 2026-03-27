@@ -32,7 +32,7 @@ except Exception:
     winreg = None
 APP_NAME = 'disc-drive'
 APP_DIR_NAME = 'disc-drive'
-APP_VERSION = '3.0.57'
+APP_VERSION = '3.0.58'
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -321,9 +321,6 @@ def normalize_int(value, default: int, minimum: int=0) -> int:
 def load_template():
     return normalize_multiline_text(config.get('post_template', default_template_text()), default_template_text())
 
-def save_template(text: str):
-    config['post_template'] = normalize_multiline_text(text, default_template_text())
-    save_config()
 
 def get_timer_enabled() -> bool:
     return bool(config.get('timer_enabled', True))
@@ -443,9 +440,8 @@ def format_file_creation_string(path) -> str:
 
 def normalize_config(raw):
     raw = raw if isinstance(raw, dict) else {}
-    legacy_wait_seconds = normalize_int(raw.get('wait_time_seconds', DEFAULT_WAIT_TIME), DEFAULT_WAIT_TIME, minimum=0)
-    default_delay_minutes = max(1, round(legacy_wait_seconds / 60)) if legacy_wait_seconds > 0 else max(1, DEFAULT_WAIT_TIME // 60)
-    return {'folder': raw.get('folder', ''), 'webhook': raw.get('webhook', ''), 'start_with_windows': bool(raw.get('start_with_windows', False)), 'delete_after_send': bool(raw.get('delete_after_send', True)), 'use_embed': bool(raw.get('use_embed', False)), 'embed_color': normalize_hex_color(raw.get('embed_color', DEFAULT_EMBED_COLOR)), 'post_template': normalize_multiline_text(raw.get('post_template', default_template_text()), default_template_text()), 'timer_enabled': bool(raw.get('timer_enabled', legacy_wait_seconds > 0)), 'delay_minutes': normalize_int(raw.get('delay_minutes', default_delay_minutes), default_delay_minutes, minimum=1), 'post_interval_seconds': normalize_int(raw.get('post_interval_seconds', DEFAULT_POST_INTERVAL), DEFAULT_POST_INTERVAL, minimum=0), 'webhook_custom_name': str(raw.get('webhook_custom_name', '') or '').strip(), 'webhook_default_name': str(raw.get('webhook_default_name', '') or '').strip(), 'webhook_default_source': str(raw.get('webhook_default_source', '') or '').strip(), 'avatar_mode': AVATAR_MODE_MANUAL if str(raw.get('avatar_mode', AVATAR_MODE_WEBHOOK) or AVATAR_MODE_WEBHOOK).strip().lower() in {'custom', AVATAR_MODE_MANUAL} else AVATAR_MODE_DEFAULT if str(raw.get('avatar_mode', AVATAR_MODE_WEBHOOK) or AVATAR_MODE_WEBHOOK).strip().lower() == AVATAR_MODE_DEFAULT else AVATAR_MODE_WEBHOOK, 'monitoring_enabled': bool(raw.get('monitoring_enabled', True)), 'window_x': normalize_int(raw.get('window_x', -1), -1, minimum=-1), 'window_y': normalize_int(raw.get('window_y', -1), -1, minimum=-1)}
+    default_delay_minutes = max(1, DEFAULT_WAIT_TIME // 60)
+    return {'folder': raw.get('folder', ''), 'webhook': raw.get('webhook', ''), 'start_with_windows': bool(raw.get('start_with_windows', False)), 'delete_after_send': bool(raw.get('delete_after_send', True)), 'use_embed': bool(raw.get('use_embed', False)), 'embed_color': normalize_hex_color(raw.get('embed_color', DEFAULT_EMBED_COLOR)), 'post_template': normalize_multiline_text(raw.get('post_template', default_template_text()), default_template_text()), 'timer_enabled': bool(raw.get('timer_enabled', True)), 'delay_minutes': normalize_int(raw.get('delay_minutes', default_delay_minutes), default_delay_minutes, minimum=1), 'post_interval_seconds': normalize_int(raw.get('post_interval_seconds', DEFAULT_POST_INTERVAL), DEFAULT_POST_INTERVAL, minimum=0), 'webhook_custom_name': str(raw.get('webhook_custom_name', '') or '').strip(), 'webhook_default_source': str(raw.get('webhook_default_source', '') or '').strip(), 'avatar_mode': AVATAR_MODE_MANUAL if str(raw.get('avatar_mode', AVATAR_MODE_WEBHOOK) or AVATAR_MODE_WEBHOOK).strip().lower() in {'custom', AVATAR_MODE_MANUAL} else AVATAR_MODE_DEFAULT if str(raw.get('avatar_mode', AVATAR_MODE_WEBHOOK) or AVATAR_MODE_WEBHOOK).strip().lower() == AVATAR_MODE_DEFAULT else AVATAR_MODE_WEBHOOK, 'monitoring_enabled': bool(raw.get('monitoring_enabled', True)), 'window_x': normalize_int(raw.get('window_x', -1), -1, minimum=-1), 'window_y': normalize_int(raw.get('window_y', -1), -1, minimum=-1)}
 config = normalize_config(load_json(CONFIG_FILE, {}))
 monitoring = bool(config.get('monitoring_enabled', True))
 sent_history = load_json(LOG_FILE, [])
@@ -771,7 +767,6 @@ def capture_webhook_defaults(webhook_url: str | None=None):
             save_config()
             return False
         data = response.json() if response.content else {}
-        config['webhook_default_name'] = str(data.get('name') or '').strip()
         avatar_hash = data.get('avatar')
         AVATAR_IMAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
         avatar_saved = False
@@ -1960,10 +1955,6 @@ class ThumbnailTile(QLabel):
         self._pixmap = pixmap
         self.update()
 
-    def clear_thumbnail(self):
-        self.thumb_path = ''
-        self._pixmap = QPixmap()
-        self.update()
 
     def paintEvent(self, event):
         super().paintEvent(event)
@@ -2183,16 +2174,13 @@ class HomePage(PageBase):
 
         self.make_page_scroll_area(self.window)
 
-        self.history_wrap = QWidget()
-        self.history_wrap.setStyleSheet(transparent_row_style())
-        self.history_layout = QVBoxLayout(self.history_wrap)
-        set_layout_margins(self.history_layout, PAGE_SKELETON_HISTORY_MARGINS)
-        self.history_layout.setSpacing(PAGE_SKELETON_HISTORY_SPACING)
-        self.thumb_strip = ThumbnailStrip(parent=self.history_wrap)
-        self.history_layout.addWidget(self.thumb_strip)
-        self.scroll_body.addWidget(self.history_wrap)
+        self.history_card = CardSection('Recent Uploads', 'Latest sent files appear here in the same card layout used by the other pages.')
+        self.history_card.setMinimumHeight(PAGE_SKELETON_CARD_MIN_H)
+        self.thumb_strip = ThumbnailStrip(parent=self.history_card)
+        self.history_card.content_layout.addWidget(self.thumb_strip)
+        self.scroll_body.addWidget(self.history_card)
         self.scroll_body.addStretch(1)
-        self.history_wrap.hide()
+        self.history_card.hide()
 
     def refresh(self):
         self.refresh_thumbnails()
@@ -2200,7 +2188,7 @@ class HomePage(PageBase):
 
     def refresh_thumbnails(self):
         self.thumb_strip.refresh_from_disk(animate=False)
-        self.history_wrap.setVisible(self.thumb_strip.has_items())
+        self.history_card.setVisible(self.thumb_strip.has_items())
         self.scroll_host.adjustSize()
         self.scroll.refresh_scrollbar()
 
@@ -2211,7 +2199,7 @@ class HomePage(PageBase):
             updated = self.thumb_strip.update_tile_content(thumb_path)
             if not updated and (not self.thumb_strip.has_items()):
                 self.thumb_strip.refresh_from_disk(animate=False)
-        self.history_wrap.setVisible(self.thumb_strip.has_items())
+        self.history_card.setVisible(self.thumb_strip.has_items())
         self.scroll_host.adjustSize()
         self.scroll.refresh_scrollbar()
 
@@ -2849,14 +2837,8 @@ class MainWindow(QWidget):
         }}
         """
 
-    def text_edit_style(self):
-        return f"\n        QTextEdit {{\n            background: {FIELD_BG};\n            color: {FIELD_TEXT};\n            border: 1px solid #2c3038;\n            border-radius: {BTN_RADIUS}px;\n            padding: 10px 12px;\n            font: {font_css(FONT_BASE, FONT_WEIGHT_SEMIBOLD)};\n        }}\n        QTextEdit:focus {{ border: {BTN_BORDER}px solid {BLUE}; }}\n        {self.scrollbar_style('QScrollBar')}\n        "
-
     def post_editor_style(self):
         return f"\n        QTextEdit {{\n            background: {FIELD_BG};\n            color: {FIELD_TEXT};\n            border: 1px solid #2c3038;\n            border-radius: {BTN_RADIUS}px;\n            padding: {POST_EDITOR_PAD_Y}px {POST_EDITOR_PAD_X}px;\n            font: {font_css(FONT_BASE, FONT_WEIGHT_SEMIBOLD)};\n        }}\n        QTextEdit:focus {{ border: {BTN_BORDER}px solid {BLUE}; }}\n        "
-
-    def preview_name_style(self):
-        return f"\n        QLineEdit {{\n            background: transparent;\n            color: {FIELD_TEXT};\n            border: none;\n            padding: 0 2px;\n            font: {font_css(FONT_MEDIUM, FONT_WEIGHT_BOLD)};\n        }}\n        QLineEdit:focus {{\n            border: none;\n        }}\n        QLineEdit::placeholder {{\n            color: {FIELD_TEXT};\n        }}\n        "
 
     def compact_input_style(self):
         return f"""
@@ -2872,25 +2854,6 @@ class MainWindow(QWidget):
         QLineEdit:focus {{ border: {BTN_BORDER}px solid {BLUE}; }}
         QLineEdit::placeholder {{ color: #6f7580; }}
         """
-    def make_primary_button(self, text, handler):
-        btn = QPushButton(text)
-        btn.setCursor(Qt.PointingHandCursor)
-        btn.clicked.connect(handler)
-        btn.setFixedHeight(BTN_H)
-        btn.setMinimumWidth(BTN_MIN_W)
-        btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {BLUE};
-                color: white;
-                border: {BTN_BORDER}px solid {BLUE};
-                border-radius: {BTN_RADIUS}px;
-                padding: 0 12px;
-                font: {font_css(FONT_BASE, FONT_WEIGHT_BOLD)};
-            }}
-            QPushButton:hover {{ background: {BLUE}; }}
-            QPushButton:pressed {{ background: {BLUE}; }}
-            """)
-        return btn
     def make_secondary_button(self, text, handler):
         btn = QPushButton(text)
         btn.setCursor(Qt.PointingHandCursor)
@@ -2910,9 +2873,6 @@ class MainWindow(QWidget):
             QPushButton:pressed {{ background: #20242b; }}
             """)
         return btn
-    def round_icon_button_style(self):
-        return f"\n        QPushButton {{\n            background: #24272d;\n            color: {TEXT};\n            border: {BTN_BORDER}px solid #30343d;\n            border-radius: {BTN_RADIUS}px;\n            padding: 0;\n            font: {font_css(13, FONT_WEIGHT_BOLD, FONT_FAMILY_EMOJI)};\n        }}\n        QPushButton:hover {{ background: #2b3038; }}\n        "
-
     def small_button_style(self, enabled=True, accent=BLUE, hover=None, text_color=None):
         if enabled:
             bg = accent
