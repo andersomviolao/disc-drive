@@ -32,7 +32,7 @@ except Exception:
     winreg = None
 APP_NAME = 'disc-drive'
 APP_DIR_NAME = 'disc-drive'
-APP_VERSION = '3.0.58'
+APP_VERSION = '3.0.59'
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -44,7 +44,6 @@ BTN_RADIUS = BTN_H // 2
 INPUT_H = 28
 TIMER_INPUT_W = 42
 HEX_INPUT_H = 28
-POST_EDITOR_MIN_LINES = 1
 POST_EDITOR_PAD_X = 12
 POST_EDITOR_PAD_Y = 10
 POST_EDITOR_FRAME_EXTRA = 2
@@ -80,7 +79,6 @@ POPUP_RADIUS = 16
 
 FONT_FAMILY = 'Segoe UI'
 FONT_FAMILY_SYMBOL = 'Segoe UI Symbol'
-FONT_FAMILY_EMOJI = 'Segoe UI Emoji'
 FONT_WEIGHT_MEDIUM = 500
 FONT_WEIGHT_SEMIBOLD = 600
 FONT_WEIGHT_BOLD = 700
@@ -92,7 +90,6 @@ WINDOW_PANEL_MARGIN_RIGHT = 16
 WINDOW_PANEL_MARGIN_BOTTOM = 12
 WINDOW_ROOT_SPACING = 10
 
-PAGE_SCROLLBAR_GAP = 2
 SCROLLBAR_RIGHT_INSET = 0
 SCROLLBAR_EXTERNAL_OFFSET = 6
 
@@ -135,7 +132,7 @@ PAGE_SKELETON_BODY_SECTION_SPACING = PAGE_SKELETON_SECTION_STACK_SPACING
 PAGE_SKELETON_SCROLL_CONTENT_MARGINS = (0, 0, 0, 0)
 PAGE_SKELETON_SCROLL_CONTENT_SPACING = PAGE_SKELETON_SECTION_STACK_SPACING
 PAGE_SKELETON_HISTORY_MARGINS = (0, 0, 0, 0)
-PAGE_SKELETON_HISTORY_SPACING = 6
+PAGE_SKELETON_HISTORY_SPACING = 8
 
 
 def get_runtime_dir() -> Path:
@@ -161,17 +158,15 @@ AVATAR_MODE_MANUAL = 'manual'
 THUMBS_DIR = BASE_DIR / 'thumbs-log'
 THUMB_TILE_SIZE = 64
 THUMB_CACHE_DIMENSION = 300
-THUMB_HOME_COLUMNS = 7
+THUMB_HOME_COLUMNS = 6
 THUMB_HOME_ROWS = 5
 THUMB_HOME_VISIBLE_COUNT = THUMB_HOME_COLUMNS * THUMB_HOME_ROWS
-THUMB_HOME_MIN_SPACING = 8
-THUMB_HOME_ROW_SPACING = 8
+THUMB_HOME_SPACING = 8
 THUMB_LOG_LIMIT = 1000
 IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'}
 VIDEO_EXTENSIONS = {'.mp4', '.mov', '.m4v', '.avi', '.mkv', '.webm', '.wmv', '.mpeg', '.mpg', '.m2ts', '.ts'}
 SUPPORTED_MEDIA_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
 DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-BG = '#0f1012'
 PANEL = '#151618'
 TEXT = '#d8d8d8'
 MUTED = '#7f7f7f'
@@ -179,7 +174,6 @@ FIELD_BG = '#222428'
 FIELD_TEXT = '#e9ecf2'
 BLUE = '#5865F2'
 YELLOW = '#f2b01e'
-ICON_GRAY = '#7a7f89'
 HOVER_DARK = '#222428'
 RED = '#ff5f73'
 GREEN = '#4fd18b'
@@ -189,7 +183,6 @@ CARD_BORDER_W = 1
 CARD_RADIUS = 16
 CARD_PADDING_X = 14
 CARD_PADDING_Y = 12
-CARD_STACK_SPACING = PAGE_SKELETON_SECTION_STACK_SPACING
 CARD_TEXT_SPACING = 2
 CARD_CONTENT_SPACING = 10
 CARD_PROFILE_MIN_H = 108
@@ -198,7 +191,6 @@ DEFAULT_EMBED_COLOR = BLUE
 FONT_TINY = 8
 FONT_BASE = 9
 FONT_MEDIUM = 10
-FONT_LARGE = 11
 FONT_TITLE = 12
 PAGE_SKELETON_TITLE_COLOR = BLUE
 PAGE_SKELETON_SUBTITLE_COLOR = MUTED
@@ -210,7 +202,6 @@ PAGE_SKELETON_SUBTITLE_FONT_WEIGHT = FONT_WEIGHT_MEDIUM
 PAGE_SKELETON_CARD_FRAME_MARGINS = (CARD_PADDING_X, CARD_PADDING_Y, CARD_PADDING_X, CARD_PADDING_Y)
 PAGE_SKELETON_CARD_TEXT_SPACING = CARD_TEXT_SPACING
 PAGE_SKELETON_CARD_CONTENT_SPACING = CARD_CONTENT_SPACING
-PAGE_SKELETON_CARD_STACK_SPACING = PAGE_SKELETON_SECTION_STACK_SPACING
 PAGE_SKELETON_CARD_MIN_H = 0
 PAGE_SKELETON_PROFILE_CARD_MIN_H = CARD_PROFILE_MIN_H
 PAGE_SKELETON_POST_CARD_MIN_H = CARD_POST_CONTENT_MIN_H
@@ -286,6 +277,19 @@ def transparent_row_style() -> str:
 
 def set_layout_margins(layout, margins):
     layout.setContentsMargins(*margins)
+
+def make_inline_controls_row(*widgets, spacing=CARD_INNER_ROW_SPACING):
+    wrap = QWidget()
+    wrap.setStyleSheet(transparent_row_style())
+    layout = QHBoxLayout(wrap)
+    set_layout_margins(layout, (0, 0, 0, 0))
+    layout.setSpacing(spacing)
+    for widget in widgets:
+        if widget is None:
+            layout.addStretch(1)
+        else:
+            layout.addWidget(widget, 0, ALIGN_VCENTER)
+    return (wrap, layout)
 
 def load_json(path: Path, default):
     with file_lock:
@@ -1375,7 +1379,7 @@ class ToggleSwitch(QPushButton):
         rect = self.rect().adjusted(1, 1, -1, -1)
         radius = rect.height() / 2
         bg = QColor(BLUE if self.isChecked() else '#363943')
-        painter.setPen(QPen(QColor('#30343d'), 1))
+        painter.setPen(QPen(QColor('#30343d'), TOGGLE_BORDER))
         painter.setBrush(bg)
         painter.drawRoundedRect(rect, radius, radius)
         knob_size = rect.height() - 6
@@ -1402,7 +1406,7 @@ class ColorSwatchButton(QPushButton):
 
     def apply_style(self):
         border = '#ffffff' if self._hovered else '#30343d'
-        self.setStyleSheet(f'\n            QPushButton {{\n                background: {self._color};\n                border: {BTN_BORDER}px solid {border};\n                border-radius: {BTN_RADIUS}px;\n            }}\n            ')
+        self.setStyleSheet(f'\n            QPushButton {{\n                background: {self._color};\n                border: {COLOR_BTN_BORDER}px solid {border};\n                border-radius: {COLOR_BTN_RADIUS}px;\n            }}\n            ')
 
     def enterEvent(self, event):
         self._hovered = True
@@ -1939,12 +1943,18 @@ class ThumbnailTile(QLabel):
         self._size = size
         self.thumb_path = ''
         self._pixmap = QPixmap()
-        self.setFixedSize(size, size)
         self.setAlignment(Qt.AlignCenter)
-        self.setStyleSheet(f'background:{CARD}; border:{CARD_BORDER_W}px solid {CARD_BORDER}; border-radius:12px;')
         self.opacity_effect = QGraphicsOpacityEffect(self)
         self.opacity_effect.setOpacity(1.0)
         self.setGraphicsEffect(self.opacity_effect)
+        self.set_tile_size(size)
+
+    def set_tile_size(self, size: int):
+        self._size = max(1, int(size))
+        radius = max(10, min(12, self._size // 5))
+        self.setFixedSize(self._size, self._size)
+        self.setStyleSheet(f'background:{CARD}; border:{CARD_BORDER_W}px solid {CARD_BORDER}; border-radius:{radius}px;')
+        self.update()
 
     def set_opacity(self, value: float):
         self.opacity_effect.setOpacity(value)
@@ -1980,13 +1990,14 @@ class ThumbnailTile(QLabel):
 
 class ThumbnailStrip(QWidget):
 
-    def __init__(self, tile_size: int=THUMB_TILE_SIZE, visible_count: int=THUMB_HOME_VISIBLE_COUNT, columns: int=THUMB_HOME_COLUMNS, spacing: int=THUMB_HOME_MIN_SPACING, row_spacing: int=THUMB_HOME_ROW_SPACING, parent=None):
+    def __init__(self, tile_size: int=THUMB_TILE_SIZE, visible_count: int=THUMB_HOME_VISIBLE_COUNT, columns: int=THUMB_HOME_COLUMNS, spacing: int=THUMB_HOME_SPACING, row_spacing: int=THUMB_HOME_SPACING, parent=None):
         super().__init__(parent)
+        self.base_tile_size = tile_size
         self.tile_size = tile_size
         self.visible_count = visible_count
         self.max_columns = max(1, columns)
-        self.min_spacing = spacing
-        self.row_spacing = row_spacing
+        self.spacing = max(0, spacing)
+        self.row_spacing = max(0, row_spacing)
         self.visible_tiles = []
         self._animations = []
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -2002,34 +2013,41 @@ class ThumbnailStrip(QWidget):
             remaining -= take
         return counts
 
+    def _effective_tile_size(self) -> int:
+        if self.max_columns <= 1:
+            return max(1, self.base_tile_size)
+        available_width = max(0, self.width())
+        if available_width <= 0:
+            return max(1, self.base_tile_size)
+        total_spacing = self.spacing * max(0, self.max_columns - 1)
+        computed = int((available_width - total_spacing) / self.max_columns)
+        return max(1, computed)
+
     def _height_for_count(self, total_items: int) -> int:
         row_count = len(self._row_counts(total_items))
         if row_count <= 0:
             return 0
-        return self.tile_size * row_count + self.row_spacing * max(0, row_count - 1)
-
-    def _slot_spacing(self) -> float:
-        slot_count = max(1, self.max_columns)
-        available_width = max(self.width(), slot_count * self.tile_size)
-        if slot_count <= 1:
-            return 0.0
-        return max(self.min_spacing, (available_width - (slot_count * self.tile_size)) / float(slot_count - 1))
+        tile_size = self._effective_tile_size()
+        return tile_size * row_count + self.row_spacing * max(0, row_count - 1)
 
     def slot_pos(self, index: int, total_items: int | None=None) -> QPoint:
         if total_items is None:
             total_items = len(self.visible_tiles)
         if total_items <= 0:
             return QPoint(0, 0)
-        spacing = self._slot_spacing()
+        tile_size = self._effective_tile_size()
         row = index // self.max_columns
         column = index % self.max_columns
-        x = column * (self.tile_size + spacing)
-        y = row * (self.tile_size + self.row_spacing)
-        return QPoint(int(round(x)), int(round(y)))
+        x = column * (tile_size + self.spacing)
+        y = row * (tile_size + self.row_spacing)
+        return QPoint(int(x), int(y))
 
     def _apply_geometry(self, total_items: int):
+        self.tile_size = self._effective_tile_size()
         target_height = self._height_for_count(total_items)
         self.setFixedHeight(target_height)
+        for tile in self.visible_tiles:
+            tile.set_tile_size(self.tile_size)
 
     def relayout_tiles(self):
         total_items = len(self.visible_tiles)
@@ -2176,6 +2194,8 @@ class HomePage(PageBase):
 
         self.history_card = CardSection('Recent Uploads', 'Latest sent files appear here in the same card layout used by the other pages.')
         self.history_card.setMinimumHeight(PAGE_SKELETON_CARD_MIN_H)
+        set_layout_margins(self.history_card.content_layout, PAGE_SKELETON_HISTORY_MARGINS)
+        self.history_card.content_layout.setSpacing(PAGE_SKELETON_HISTORY_SPACING)
         self.thumb_strip = ThumbnailStrip(parent=self.history_card)
         self.history_card.content_layout.addWidget(self.thumb_strip)
         self.scroll_body.addWidget(self.history_card)
@@ -2270,9 +2290,7 @@ class PostTemplatePage(PageBase):
 
         self.profile_card = CardSection('Webhook Profile', 'Choose the avatar, set the webhook name, or clear the current custom data.')
         self.profile_card.setMinimumHeight(PAGE_SKELETON_PROFILE_CARD_MIN_H)
-        profile_row = QHBoxLayout()
-        profile_row.setContentsMargins(0, 0, 0, 0)
-        profile_row.setSpacing(CARD_INNER_ROW_SPACING)
+        _, profile_row = make_inline_controls_row(spacing=CARD_INNER_ROW_SPACING)
         self.avatar_preview = AvatarPreview(AVATAR_SIZE)
         self.avatar_preview.clicked.connect(self.choose_profile_image)
         profile_row.addWidget(self.avatar_preview, 0, ALIGN_VCENTER)
@@ -2290,11 +2308,7 @@ class PostTemplatePage(PageBase):
         self.profile_card.content_layout.addLayout(profile_row)
         self.scroll_body.addWidget(self.profile_card)
 
-        embed_wrap = QWidget()
-        embed_wrap.setStyleSheet(transparent_row_style())
-        embed_layout = QHBoxLayout(embed_wrap)
-        embed_layout.setContentsMargins(0, 0, 0, 0)
-        embed_layout.setSpacing(EMBED_ROW_SPACING)
+        embed_wrap, embed_layout = make_inline_controls_row(spacing=EMBED_ROW_SPACING)
         self.color_btn = ColorSwatchButton(config.get('embed_color', DEFAULT_EMBED_COLOR))
         self.color_btn.clicked.connect(self.toggle_embed_color_popup)
         embed_layout.addWidget(self.color_btn, 0, ALIGN_VCENTER)
@@ -2459,52 +2473,54 @@ class PostTemplatePage(PageBase):
         self.save_template(show_feedback=True)
         self.window.open_settings_page()
 
-class SettingRow(QFrame):
+class BaseCardFrame(QFrame):
 
-    def __init__(self, title, subtitle, right_widget):
+    def __init__(self, object_name: str, title: str, subtitle: str=''):
         super().__init__()
-        self.setObjectName('settingRow')
-        self.setStyleSheet(card_frame_style('settingRow'))
+        self.setObjectName(object_name)
+        self.setStyleSheet(card_frame_style(object_name))
         self.setMinimumHeight(PAGE_SKELETON_CARD_MIN_H)
-        root = QHBoxLayout(self)
-        set_layout_margins(root, PAGE_SKELETON_CARD_FRAME_MARGINS)
-        root.setSpacing(PAGE_SKELETON_CARD_CONTENT_SPACING)
-        left = QVBoxLayout()
-        left.setSpacing(PAGE_SKELETON_CARD_TEXT_SPACING)
+        self.root = QVBoxLayout(self)
+        set_layout_margins(self.root, PAGE_SKELETON_CARD_FRAME_MARGINS)
+        self.root.setSpacing(PAGE_SKELETON_CARD_CONTENT_SPACING)
+        self.text_block = QWidget()
+        self.text_block.setStyleSheet(transparent_row_style())
+        self.text_layout = QVBoxLayout(self.text_block)
+        set_layout_margins(self.text_layout, (0, 0, 0, 0))
+        self.text_layout.setSpacing(PAGE_SKELETON_CARD_TEXT_SPACING)
         self.title_label = QLabel(title)
         self.title_label.setStyleSheet(f"color:{TEXT}; font: {font_css(FONT_MEDIUM, FONT_WEIGHT_BOLD)};")
-        left.addWidget(self.title_label)
+        self.text_layout.addWidget(self.title_label)
         self.subtitle_label = QLabel(subtitle)
         self.subtitle_label.setWordWrap(True)
         self.subtitle_label.setStyleSheet(f"color:{MUTED}; font: {font_css(FONT_BASE, FONT_WEIGHT_MEDIUM)};")
-        left.addWidget(self.subtitle_label)
-        root.addLayout(left, 1)
-        root.addWidget(right_widget, 0, ALIGN_VCENTER)
+        self.text_layout.addWidget(self.subtitle_label)
+        self.subtitle_label.setVisible(bool(subtitle))
 
     def set_subtitle(self, subtitle):
         self.subtitle_label.setText(subtitle)
+        self.subtitle_label.setVisible(bool(subtitle))
 
-class CardSection(QFrame):
+class SettingRow(BaseCardFrame):
+
+    def __init__(self, title, subtitle, right_widget):
+        super().__init__('settingRow', title, subtitle)
+        row = QHBoxLayout()
+        set_layout_margins(row, (0, 0, 0, 0))
+        row.setSpacing(PAGE_SKELETON_CARD_CONTENT_SPACING)
+        row.addWidget(self.text_block, 1)
+        row.addWidget(right_widget, 0, ALIGN_VCENTER)
+        self.root.addLayout(row)
+
+class CardSection(BaseCardFrame):
 
     def __init__(self, title, subtitle=''):
-        super().__init__()
-        self.setObjectName('cardSection')
-        self.setStyleSheet(card_frame_style('cardSection'))
-        self.setMinimumHeight(PAGE_SKELETON_CARD_MIN_H)
-        root = QVBoxLayout(self)
-        set_layout_margins(root, PAGE_SKELETON_CARD_FRAME_MARGINS)
-        root.setSpacing(PAGE_SKELETON_CARD_CONTENT_SPACING)
-        self.title_label = QLabel(title)
-        self.title_label.setStyleSheet(f"color:{TEXT}; font: {font_css(FONT_MEDIUM, FONT_WEIGHT_BOLD)};")
-        root.addWidget(self.title_label)
-        self.subtitle_label = QLabel(subtitle)
-        self.subtitle_label.setWordWrap(True)
-        self.subtitle_label.setStyleSheet(f"color:{MUTED}; font: {font_css(FONT_BASE, FONT_WEIGHT_MEDIUM)};")
-        root.addWidget(self.subtitle_label)
+        super().__init__('cardSection', title, subtitle)
+        self.root.addWidget(self.text_block)
         self.content_layout = QVBoxLayout()
         set_layout_margins(self.content_layout, (0, 0, 0, 0))
         self.content_layout.setSpacing(PAGE_SKELETON_CARD_CONTENT_SPACING)
-        root.addLayout(self.content_layout)
+        self.root.addLayout(self.content_layout)
 
 class SettingsPage(PageBase):
 
@@ -2518,19 +2534,13 @@ class SettingsPage(PageBase):
         self.body.addLayout(back_row)
         self.make_page_scroll_area(self.window)
 
-        webhook_wrap = QWidget()
-        webhook_wrap.setStyleSheet(transparent_row_style())
-        webhook_layout = QHBoxLayout(webhook_wrap)
-        webhook_layout.setContentsMargins(0, 0, 0, 0)
+        webhook_wrap, webhook_layout = make_inline_controls_row()
         self.webhook_paste_btn = self.window.make_small_button('Paste', self.paste_webhook)
         webhook_layout.addWidget(self.webhook_paste_btn)
         self.webhook_row = SettingRow('Webhook', '', webhook_wrap)
         self.scroll_body.addWidget(self.webhook_row)
 
-        folder_wrap = QWidget()
-        folder_wrap.setStyleSheet(transparent_row_style())
-        folder_layout = QHBoxLayout(folder_wrap)
-        folder_layout.setContentsMargins(0, 0, 0, 0)
+        folder_wrap, folder_layout = make_inline_controls_row()
         self.folder_browse_btn = self.window.make_small_button('Browse', self.browse_folder)
         folder_layout.addWidget(self.folder_browse_btn)
         self.watched_folder_row = SettingRow('Watched Folder', '', folder_wrap)
@@ -2539,28 +2549,18 @@ class SettingsPage(PageBase):
         self.delete_toggle = ToggleSwitch(config.get('delete_after_send', True))
         self.delete_toggle.clicked.connect(self.toggle_delete_after_send)
         self.scroll_body.addWidget(SettingRow('Delete after send', 'On: moves the file to the Recycle Bin. Off: keeps the file and avoids duplicates through the log.', self.delete_toggle))
-        clear_wrap = QWidget()
-        clear_wrap.setStyleSheet(transparent_row_style())
-        clear_layout = QHBoxLayout(clear_wrap)
-        clear_layout.setContentsMargins(0, 0, 0, 0)
+        clear_wrap, clear_layout = make_inline_controls_row()
         self.clear_log_btn = self.window.make_small_button('Clear Log', self.clear_log, accent=YELLOW)
         clear_layout.addWidget(self.clear_log_btn)
         self.scroll_body.addWidget(SettingRow('Clear Log', 'Deletes the history of already sent files and allows them to be sent again.', clear_wrap))
         self.start_toggle = ToggleSwitch(config.get('start_with_windows', False))
         self.start_toggle.clicked.connect(self.toggle_startup)
         self.scroll_body.addWidget(SettingRow('Start with Windows', 'Starts hidden in the system tray when Windows launches.', self.start_toggle))
-        post_wrap = QWidget()
-        post_wrap.setStyleSheet(transparent_row_style())
-        post_layout = QHBoxLayout(post_wrap)
-        post_layout.setContentsMargins(0, 0, 0, 0)
+        post_wrap, post_layout = make_inline_controls_row()
         self.post_btn = self.window.make_small_button('Edit Post', self.window.open_post_template_page)
         post_layout.addWidget(self.post_btn)
         self.scroll_body.addWidget(SettingRow('Customize Post', 'Opens a page to edit the post text, webhook name, webhook image, and embed settings.', post_wrap))
-        timer_wrap = QWidget()
-        timer_wrap.setStyleSheet(transparent_row_style())
-        timer_layout = QHBoxLayout(timer_wrap)
-        timer_layout.setContentsMargins(0, 0, 0, 0)
-        timer_layout.setSpacing(TIMER_ROW_SPACING)
+        timer_wrap, timer_layout = make_inline_controls_row(spacing=TIMER_ROW_SPACING)
         self.timer_input = QLineEdit()
         self.timer_input.setValidator(QIntValidator(1, 999999, self))
         self.timer_input.setAlignment(Qt.AlignCenter)
@@ -2572,10 +2572,7 @@ class SettingsPage(PageBase):
         self.timer_toggle.clicked.connect(self.toggle_timer)
         timer_layout.addWidget(self.timer_toggle, 0, ALIGN_VCENTER)
         self.scroll_body.addWidget(SettingRow('Post Timer', 'Delay before sending new posts.', timer_wrap))
-        open_wrap = QWidget()
-        open_wrap.setStyleSheet(transparent_row_style())
-        open_layout = QHBoxLayout(open_wrap)
-        open_layout.setContentsMargins(0, 0, 0, 0)
+        open_wrap, open_layout = make_inline_controls_row()
         self.open_cfg_btn = self.window.make_small_button('Open Folder', self.open_config_folder)
         open_layout.addWidget(self.open_cfg_btn)
         self.scroll_body.addWidget(SettingRow('Configuration Folder', str(BASE_DIR), open_wrap))
