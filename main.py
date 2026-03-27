@@ -32,7 +32,7 @@ except Exception:
     winreg = None
 APP_NAME = 'disc-drive'
 APP_DIR_NAME = 'disc-drive'
-APP_VERSION = '3.0.54'
+APP_VERSION = '3.0.55'
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -92,16 +92,9 @@ WINDOW_PANEL_MARGIN_RIGHT = 16
 WINDOW_PANEL_MARGIN_BOTTOM = 12
 WINDOW_ROOT_SPACING = 10
 
-PAGE_ROOT_SPACING = 10
-PAGE_HEADER_SPACING = 1
-PAGE_TOP_ROW_SPACING = 8
-PAGE_SECTION_SPACING = 10
-PAGE_SCROLL_CONTENT_RIGHT_PADDING = 0
 PAGE_SCROLLBAR_GAP = 2
 SCROLLBAR_RIGHT_INSET = 0
 SCROLLBAR_EXTERNAL_OFFSET = 6
-PAGE_HISTORY_SPACING = 6
-HOME_SCROLL_SPACING = 0
 
 CARD_INNER_ROW_SPACING = 12
 EMBED_ROW_SPACING = 8
@@ -123,6 +116,40 @@ STATUS_LABEL_MIN_H = 16
 ALIGN_LEFT_VCENTER = Qt.AlignLeft | Qt.AlignVCenter
 ALIGN_LEFT_BOTTOM = Qt.AlignLeft | Qt.AlignBottom
 ALIGN_VCENTER = Qt.AlignVCenter
+
+PAGE_SKELETON_ROOT_MARGINS = (0, 0, 0, 0)
+PAGE_SKELETON_ROOT_SPACING = 10
+PAGE_SKELETON_MIN_CONTENT_W = WINDOW_WIDTH - WINDOW_OUTER_MARGIN * 2 - WINDOW_PANEL_MARGIN_LEFT - WINDOW_PANEL_MARGIN_RIGHT
+
+PAGE_SKELETON_HEADER_MARGINS = (0, 0, 0, 0)
+PAGE_SKELETON_HEADER_MIN_H = 0
+PAGE_SKELETON_HEADER_TEXT_SPACING = 1
+PAGE_SKELETON_TITLE_ALIGNMENT = ALIGN_LEFT_BOTTOM
+PAGE_SKELETON_SUBTITLE_ALIGNMENT = ALIGN_LEFT_VCENTER
+PAGE_SKELETON_TOP_ROW_MARGINS = (0, 0, 0, 0)
+PAGE_SKELETON_TOP_ROW_SPACING = 8
+
+PAGE_SKELETON_BODY_MARGINS = (0, 0, 0, 0)
+PAGE_SKELETON_BODY_SECTION_SPACING = 10
+PAGE_SKELETON_SCROLL_CONTENT_MARGINS = (0, 0, 0, 0)
+PAGE_SKELETON_SCROLL_CONTENT_SPACING = 10
+PAGE_SKELETON_HISTORY_MARGINS = (0, 0, 0, 0)
+PAGE_SKELETON_HISTORY_SPACING = 6
+
+PAGE_SKELETON_TITLE_COLOR = BLUE
+PAGE_SKELETON_SUBTITLE_COLOR = MUTED
+PAGE_SKELETON_TITLE_FONT_SIZE = FONT_TITLE
+PAGE_SKELETON_SUBTITLE_FONT_SIZE = FONT_BASE
+PAGE_SKELETON_TITLE_FONT_WEIGHT = FONT_WEIGHT_BOLD
+PAGE_SKELETON_SUBTITLE_FONT_WEIGHT = FONT_WEIGHT_MEDIUM
+
+PAGE_SKELETON_CARD_FRAME_MARGINS = (CARD_PADDING_X, CARD_PADDING_Y, CARD_PADDING_X, CARD_PADDING_Y)
+PAGE_SKELETON_CARD_TEXT_SPACING = CARD_TEXT_SPACING
+PAGE_SKELETON_CARD_CONTENT_SPACING = CARD_CONTENT_SPACING
+PAGE_SKELETON_CARD_STACK_SPACING = CARD_STACK_SPACING
+PAGE_SKELETON_CARD_MIN_H = 0
+PAGE_SKELETON_PROFILE_CARD_MIN_H = 108
+PAGE_SKELETON_POST_CARD_MIN_H = 0
 
 def get_runtime_dir() -> Path:
     try:
@@ -255,6 +282,9 @@ def font_css(size: int, weight: int=FONT_WEIGHT_SEMIBOLD, family: str=FONT_FAMIL
 
 def transparent_row_style() -> str:
     return 'background: transparent;'
+
+def set_layout_margins(layout, margins):
+    layout.setContentsMargins(*margins)
 
 def load_json(path: Path, default):
     with file_lock:
@@ -1737,23 +1767,52 @@ class PageBase(QWidget):
 
     def __init__(self, title, subtitle):
         super().__init__()
+        self.setMinimumWidth(PAGE_SKELETON_MIN_CONTENT_W)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Ignored)
+
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(PAGE_ROOT_SPACING)
-        top = QVBoxLayout()
-        top.setSpacing(PAGE_HEADER_SPACING)
+        set_layout_margins(root, PAGE_SKELETON_ROOT_MARGINS)
+        root.setSpacing(PAGE_SKELETON_ROOT_SPACING)
+
+        self.header = QWidget()
+        self.header.setStyleSheet(transparent_row_style())
+        self.header.setMinimumHeight(PAGE_SKELETON_HEADER_MIN_H)
+        header_layout = QVBoxLayout(self.header)
+        set_layout_margins(header_layout, PAGE_SKELETON_HEADER_MARGINS)
+        header_layout.setSpacing(PAGE_SKELETON_HEADER_TEXT_SPACING)
+
         self.title = QLabel(title)
-        self.title.setStyleSheet(f"color:{BLUE}; font: {font_css(FONT_TITLE, FONT_WEIGHT_BOLD)};")
-        top.addWidget(self.title)
+        self.title.setStyleSheet(f"color:{PAGE_SKELETON_TITLE_COLOR}; font: {font_css(PAGE_SKELETON_TITLE_FONT_SIZE, PAGE_SKELETON_TITLE_FONT_WEIGHT)};")
+        header_layout.addWidget(self.title, 0, PAGE_SKELETON_TITLE_ALIGNMENT)
+
         self.subtitle = QLabel(subtitle)
         self.subtitle.setWordWrap(True)
-        self.subtitle.setStyleSheet(f"color:{MUTED}; font: {font_css(FONT_BASE, FONT_WEIGHT_MEDIUM)};")
-        top.addWidget(self.subtitle)
-        root.addLayout(top)
+        self.subtitle.setStyleSheet(f"color:{PAGE_SKELETON_SUBTITLE_COLOR}; font: {font_css(PAGE_SKELETON_SUBTITLE_FONT_SIZE, PAGE_SKELETON_SUBTITLE_FONT_WEIGHT)};")
+        header_layout.addWidget(self.subtitle, 0, PAGE_SKELETON_SUBTITLE_ALIGNMENT)
+
+        root.addWidget(self.header)
+
         self.body = QVBoxLayout()
-        self.body.setSpacing(PAGE_SECTION_SPACING)
+        set_layout_margins(self.body, PAGE_SKELETON_BODY_MARGINS)
+        self.body.setSpacing(PAGE_SKELETON_BODY_SECTION_SPACING)
         root.addLayout(self.body, 1)
+
+    def make_page_top_row(self):
+        row = QHBoxLayout()
+        set_layout_margins(row, PAGE_SKELETON_TOP_ROW_MARGINS)
+        row.setSpacing(PAGE_SKELETON_TOP_ROW_SPACING)
+        return row
+
+    def make_page_scroll_area(self, window, *, spacing=PAGE_SKELETON_SCROLL_CONTENT_SPACING):
+        self.scroll = ExternalScrollPane(window)
+        self.scroll_host = QWidget()
+        self.scroll_host.setStyleSheet(transparent_row_style())
+        self.scroll_host.setMinimumWidth(PAGE_SKELETON_MIN_CONTENT_W)
+        self.scroll_body = QVBoxLayout(self.scroll_host)
+        set_layout_margins(self.scroll_body, PAGE_SKELETON_SCROLL_CONTENT_MARGINS)
+        self.scroll_body.setSpacing(spacing)
+        self.scroll.setWidget(self.scroll_host)
+        self.body.addWidget(self.scroll, 1)
 
     def minimumSizeHint(self):
         return QSize(0, 0)
@@ -2110,9 +2169,7 @@ class HomePage(PageBase):
         super().__init__(f'{APP_NAME} v{APP_VERSION}', 'Simple monitoring, polished visuals, and everything inside the same interface.')
         self.window = window
 
-        top_row = QHBoxLayout()
-        top_row.setContentsMargins(0, 0, 0, 0)
-        top_row.setSpacing(PAGE_TOP_ROW_SPACING)
+        top_row = self.make_page_top_row()
         self.pause_btn = self.window.make_small_button('Pause', self.window.toggle_monitoring, accent=BLUE)
         self.pause_btn.setMinimumWidth(BTN_MIN_W)
         top_row.addWidget(self.pause_btn)
@@ -2123,20 +2180,13 @@ class HomePage(PageBase):
         top_row.addWidget(self.cfg_btn)
         self.body.addLayout(top_row)
 
-        self.scroll = ExternalScrollPane(self.window)
-        self.scroll_host = QWidget()
-        self.scroll_host.setStyleSheet(transparent_row_style())
-        self.scroll_body = QVBoxLayout(self.scroll_host)
-        self.scroll_body.setContentsMargins(0, 0, PAGE_SCROLL_CONTENT_RIGHT_PADDING, 0)
-        self.scroll_body.setSpacing(HOME_SCROLL_SPACING)
-        self.scroll.setWidget(self.scroll_host)
-        self.body.addWidget(self.scroll, 1)
+        self.make_page_scroll_area(self.window, spacing=PAGE_SKELETON_SCROLL_CONTENT_SPACING)
 
         self.history_wrap = QWidget()
         self.history_wrap.setStyleSheet(transparent_row_style())
         self.history_layout = QVBoxLayout(self.history_wrap)
-        self.history_layout.setContentsMargins(0, 0, 0, 0)
-        self.history_layout.setSpacing(PAGE_HISTORY_SPACING)
+        set_layout_margins(self.history_layout, PAGE_SKELETON_HISTORY_MARGINS)
+        self.history_layout.setSpacing(PAGE_SKELETON_HISTORY_SPACING)
         self.thumb_strip = ThumbnailStrip(parent=self.history_wrap)
         self.history_layout.addWidget(self.thumb_strip)
         self.scroll_body.addWidget(self.history_wrap)
@@ -2218,9 +2268,7 @@ class PostTemplatePage(PageBase):
         self._loading = False
         self.color_popup = None
 
-        top_row = QHBoxLayout()
-        top_row.setContentsMargins(0, 0, 0, 0)
-        top_row.setSpacing(PAGE_TOP_ROW_SPACING)
+        top_row = self.make_page_top_row()
         self.back_btn = self.window.make_secondary_button('← Back', self.back_to_settings)
         top_row.addWidget(self.back_btn)
         top_row.addStretch(1)
@@ -2229,17 +2277,10 @@ class PostTemplatePage(PageBase):
         top_row.addWidget(self.test_btn)
         self.body.addLayout(top_row)
 
-        self.scroll = ExternalScrollPane(self.window)
-        self.scroll_host = QWidget()
-        self.scroll_host.setStyleSheet(transparent_row_style())
-        self.scroll_body = QVBoxLayout(self.scroll_host)
-        self.scroll_body.setContentsMargins(0, 0, PAGE_SCROLL_CONTENT_RIGHT_PADDING, 0)
-        self.scroll_body.setSpacing(CARD_STACK_SPACING)
-        self.scroll.setWidget(self.scroll_host)
-        self.body.addWidget(self.scroll, 1)
+        self.make_page_scroll_area(self.window, spacing=PAGE_SKELETON_CARD_STACK_SPACING)
 
         self.profile_card = CardSection('Webhook Profile', 'Choose the avatar, set the webhook name, or clear the current custom data.')
-        self.profile_card.setMinimumHeight(CARD_PROFILE_MIN_H)
+        self.profile_card.setMinimumHeight(PAGE_SKELETON_PROFILE_CARD_MIN_H)
         profile_row = QHBoxLayout()
         profile_row.setContentsMargins(0, 0, 0, 0)
         profile_row.setSpacing(CARD_INNER_ROW_SPACING)
@@ -2275,7 +2316,7 @@ class PostTemplatePage(PageBase):
         self.scroll_body.addWidget(self.embed_card)
 
         self.content_card = CardSection('Post Content', 'Edit the message template that will be sent together with the file.')
-        self.content_card.setMinimumHeight(CARD_POST_CONTENT_MIN_H)
+        self.content_card.setMinimumHeight(PAGE_SKELETON_POST_CARD_MIN_H)
         self.content_card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         self.editor = AutoHeightTextEdit()
         self.editor.setPlaceholderText('Type the post content here...')
@@ -2435,11 +2476,12 @@ class SettingRow(QFrame):
         super().__init__()
         self.setObjectName('settingRow')
         self.setStyleSheet(card_frame_style('settingRow'))
+        self.setMinimumHeight(PAGE_SKELETON_CARD_MIN_H)
         root = QHBoxLayout(self)
-        root.setContentsMargins(CARD_PADDING_X, CARD_PADDING_Y, CARD_PADDING_X, CARD_PADDING_Y)
-        root.setSpacing(CARD_CONTENT_SPACING)
+        set_layout_margins(root, PAGE_SKELETON_CARD_FRAME_MARGINS)
+        root.setSpacing(PAGE_SKELETON_CARD_CONTENT_SPACING)
         left = QVBoxLayout()
-        left.setSpacing(CARD_TEXT_SPACING)
+        left.setSpacing(PAGE_SKELETON_CARD_TEXT_SPACING)
         self.title_label = QLabel(title)
         self.title_label.setStyleSheet(f"color:{TEXT}; font: {font_css(FONT_MEDIUM, FONT_WEIGHT_BOLD)};")
         left.addWidget(self.title_label)
@@ -2459,9 +2501,10 @@ class CardSection(QFrame):
         super().__init__()
         self.setObjectName('cardSection')
         self.setStyleSheet(card_frame_style('cardSection'))
+        self.setMinimumHeight(PAGE_SKELETON_CARD_MIN_H)
         root = QVBoxLayout(self)
-        root.setContentsMargins(CARD_PADDING_X, CARD_PADDING_Y, CARD_PADDING_X, CARD_PADDING_Y)
-        root.setSpacing(CARD_CONTENT_SPACING)
+        set_layout_margins(root, PAGE_SKELETON_CARD_FRAME_MARGINS)
+        root.setSpacing(PAGE_SKELETON_CARD_CONTENT_SPACING)
         self.title_label = QLabel(title)
         self.title_label.setStyleSheet(f"color:{TEXT}; font: {font_css(FONT_MEDIUM, FONT_WEIGHT_BOLD)};")
         root.addWidget(self.title_label)
@@ -2470,8 +2513,8 @@ class CardSection(QFrame):
         self.subtitle_label.setStyleSheet(f"color:{MUTED}; font: {font_css(FONT_BASE, FONT_WEIGHT_MEDIUM)};")
         root.addWidget(self.subtitle_label)
         self.content_layout = QVBoxLayout()
-        self.content_layout.setContentsMargins(0, 0, 0, 0)
-        self.content_layout.setSpacing(CARD_CONTENT_SPACING)
+        set_layout_margins(self.content_layout, (0, 0, 0, 0))
+        self.content_layout.setSpacing(PAGE_SKELETON_CARD_CONTENT_SPACING)
         root.addLayout(self.content_layout)
 
 class SettingsPage(PageBase):
@@ -2479,19 +2522,12 @@ class SettingsPage(PageBase):
     def __init__(self, window):
         super().__init__('Settings', 'Everything is saved immediately whenever you change an option.')
         self.window = window
-        back_row = QHBoxLayout()
+        back_row = self.make_page_top_row()
         self.back_btn = self.window.make_secondary_button('← Back', self.window.go_home)
         back_row.addWidget(self.back_btn)
         back_row.addStretch(1)
         self.body.addLayout(back_row)
-        self.scroll = ExternalScrollPane(self.window)
-        self.scroll_host = QWidget()
-        self.scroll_host.setStyleSheet(transparent_row_style())
-        self.scroll_body = QVBoxLayout(self.scroll_host)
-        self.scroll_body.setContentsMargins(0, 0, PAGE_SCROLL_CONTENT_RIGHT_PADDING, 0)
-        self.scroll_body.setSpacing(CARD_STACK_SPACING)
-        self.scroll.setWidget(self.scroll_host)
-        self.body.addWidget(self.scroll, 1)
+        self.make_page_scroll_area(self.window, spacing=PAGE_SKELETON_CARD_STACK_SPACING)
 
         webhook_wrap = QWidget()
         webhook_wrap.setStyleSheet(transparent_row_style())
