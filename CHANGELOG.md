@@ -4,7 +4,62 @@ All notable changes to **disc-drive** are documented in this file.
 
 This changelog combines the latest version notes with reconstructed historical entries from uploaded source snapshots. Older versions were rebuilt from source snapshots, so very small visual tweaks may not be listed individually.
 
+## [3.0.61]
 
+### Changed
+
+- Replaced the old **App Version** row with a new **About** card in **Settings**.
+- Added a clickable GitHub project link.
+- Added build metadata with version and fixed build date.
+- Added programming-language, credits, and license-notice fields to the interface.
+- Kept the new information block visually aligned with the existing card system.
+
+## [3.0.60]
+
+### Fixed
+
+- Wrapped the **Webhook Profile** controls in the same inline container pattern used elsewhere in the interface.
+- Improved layout consistency inside the profile card on the **Customize Post** page.
+
+## [3.0.59]
+
+### Changed
+
+- Reworked the home **Recent Uploads** gallery to use **6 columns × 5 rows** instead of 7 columns.
+- Made thumbnail tile size derive from the available width for more stable alignment.
+- Standardized inline control-row helpers across the settings and customize sections.
+- Refactored shared card foundations so settings rows and content cards follow the same internal structure.
+
+## [3.0.58]
+
+### Changed
+
+- Moved the home recent-history block into a proper card section so it matches the rest of the project skeleton.
+- Simplified timer-related config normalization around the current minute-based delay flow.
+- Removed some leftover legacy helpers and old config fields that were no longer needed.
+
+## [3.0.57]
+
+### Changed
+
+- Unified page, body, scroll, and card stack spacing through a shared section-spacing constant.
+- Simplified page scroll-area creation by relying more directly on the shared page skeleton builder.
+
+## [3.0.56]
+
+### Changed
+
+- Linked page skeleton card sizing to the shared card dimension constants.
+- Reduced duplicated layout values for profile and post-content card sizing.
+- Continued tightening the shared layout foundation used across pages.
+
+## [3.0.55]
+
+### Changed
+
+- Introduced a shared page skeleton system for headers, top rows, scroll containers, and card spacing.
+- Standardized page construction around shared margin and spacing helpers.
+- Improved structural consistency between **Home**, **Settings**, and **Customize Post**.
 
 ## [3.0.54]
 

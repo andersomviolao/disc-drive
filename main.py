@@ -32,7 +32,20 @@ except Exception:
     winreg = None
 APP_NAME = 'disc-drive'
 APP_DIR_NAME = 'disc-drive'
-APP_VERSION = '3.0.60'
+APP_VERSION = '3.0.61'
+APP_BUILD_DATE = '2026-03-27'
+APP_GITHUB_URL = 'https://github.com/andersomviolao/disc-drive'
+APP_GITHUB_LABEL = 'Open project on GitHub'
+APP_PROGRAMMING_LANGUAGES = 'Python'
+APP_CREDITS = 'Anderson · ChatGPT'
+APP_COPYRIGHT = 'Copyright © 2026 Anderson'
+APP_LICENSE_SUMMARY = (
+    f'{APP_COPYRIGHT} · Project: MIT (full text in LICENSE).\n'
+    'Python runtime: PSF License v2.\n'
+    'PySide6 / Qt for Python: LGPLv3/GPLv3 or commercial.\n'
+    'requests: Apache-2.0.\n'
+    'Send2Trash: BSD-3-Clause.'
+)
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -2522,6 +2535,21 @@ class CardSection(BaseCardFrame):
         self.content_layout.setSpacing(PAGE_SKELETON_CARD_CONTENT_SPACING)
         self.root.addLayout(self.content_layout)
 
+class AboutInfoRow(QWidget):
+
+    def __init__(self, title, value_widget):
+        super().__init__()
+        self.setStyleSheet(transparent_row_style())
+        self.layout = QHBoxLayout(self)
+        set_layout_margins(self.layout, (0, 0, 0, 0))
+        self.layout.setSpacing(CARD_INNER_ROW_SPACING)
+        self.title_label = QLabel(title)
+        self.title_label.setFixedWidth(74)
+        self.title_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        self.title_label.setStyleSheet(f"color:{MUTED}; font: {font_css(FONT_BASE, FONT_WEIGHT_MEDIUM)}; background: transparent; border: none;")
+        self.layout.addWidget(self.title_label, 0, Qt.AlignTop)
+        self.layout.addWidget(value_widget, 1, Qt.AlignTop)
+
 class SettingsPage(PageBase):
 
     def __init__(self, window):
@@ -2576,8 +2604,19 @@ class SettingsPage(PageBase):
         self.open_cfg_btn = self.window.make_small_button('Open Folder', self.open_config_folder)
         open_layout.addWidget(self.open_cfg_btn)
         self.scroll_body.addWidget(SettingRow('Configuration Folder', str(BASE_DIR), open_wrap))
-        self.version_value = self.window.make_info_value()
-        self.scroll_body.addWidget(SettingRow('App Version', 'Current version in use.', self.version_value))
+
+        self.about_card = CardSection('About', 'Project link, build details, languages, credits, and license notices.')
+        self.about_github_value = self.window.make_info_link(APP_GITHUB_URL, APP_GITHUB_LABEL)
+        self.about_build_value = self.window.make_info_value()
+        self.about_languages_value = self.window.make_info_value()
+        self.about_credits_value = self.window.make_info_value()
+        self.about_licenses_value = self.window.make_info_value()
+        self.about_card.content_layout.addWidget(AboutInfoRow('GitHub', self.about_github_value))
+        self.about_card.content_layout.addWidget(AboutInfoRow('Build', self.about_build_value))
+        self.about_card.content_layout.addWidget(AboutInfoRow('Languages', self.about_languages_value))
+        self.about_card.content_layout.addWidget(AboutInfoRow('Credits', self.about_credits_value))
+        self.about_card.content_layout.addWidget(AboutInfoRow('Licenses', self.about_licenses_value))
+        self.scroll_body.addWidget(self.about_card)
         self.scroll_body.addStretch(1)
 
     def refresh(self):
@@ -2588,7 +2627,10 @@ class SettingsPage(PageBase):
         self.timer_toggle.setChecked(get_timer_enabled())
         self.timer_input.setText(str(get_delay_minutes()))
         self.update_timer_visibility()
-        self.version_value.setText(APP_VERSION)
+        self.about_build_value.setText(f'v{APP_VERSION} · {APP_BUILD_DATE}')
+        self.about_languages_value.setText(APP_PROGRAMMING_LANGUAGES)
+        self.about_credits_value.setText(APP_CREDITS)
+        self.about_licenses_value.setText(APP_LICENSE_SUMMARY)
 
     def current_delay_minutes(self) -> int:
         text = (self.timer_input.text() or '').strip()
@@ -2913,6 +2955,16 @@ class MainWindow(QWidget):
         label.setWordWrap(True)
         label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         label.setStyleSheet(f"color:{TEXT}; font: {font_css(FONT_BASE, FONT_WEIGHT_SEMIBOLD)}; background: transparent; border: none;")
+        return label
+
+    def make_info_link(self, url, text):
+        label = QLabel(f'<a href="{url}" style="color:{BLUE}; text-decoration:none;">{text}</a>')
+        label.setWordWrap(True)
+        label.setTextFormat(Qt.RichText)
+        label.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        label.setOpenExternalLinks(True)
+        label.setCursor(Qt.PointingHandCursor)
+        label.setStyleSheet(f"color:{BLUE}; font: {font_css(FONT_BASE, FONT_WEIGHT_SEMIBOLD)}; background: transparent; border: none;")
         return label
 
     def refresh_all(self):

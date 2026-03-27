@@ -6,7 +6,7 @@ The project is focused on a simple workflow: watch a folder, queue supported fil
 
 ## Current status
 
-This README reflects the current behavior up to version **3.0.54**.
+This README reflects the current behavior up to version **3.0.61**.
 
 ## What the app includes
 
@@ -30,13 +30,17 @@ Edit webhook, watched folder, and main options directly inside **Settings**.
 
 Customize post text, webhook name, webhook image, and embed color inside **Customize Post**.
 
-Show up to **35** recent thumbnails on the home page in a **7 × 5** gallery.
+Show up to **30** recent thumbnails on the home page in a **6 × 5** gallery.
 
 Use a scrollable home layout so larger recent-history sections fit without breaking the fixed window size.
 
 Use a scrollable **Customize Post** page so all cards stay accessible in the compact window.
 
 Use an auto-growing post editor that starts at a single visible line and expands or shrinks with the content.
+
+Keep the home recent-history area visually aligned with the same card system used across the rest of the interface.
+
+Open a dedicated **About** card inside **Settings** with the project GitHub link, current build and date, programming language, credits, and license notices.
 
 Clear the sent-history log when needed.
 
@@ -85,6 +89,18 @@ The app can work with three avatar sources:
 3. The local default image at `files/default-img.png`.
 
 If the local default image is missing, the app generates a fallback default image automatically.
+
+## About card
+
+The **About** section in **Settings** includes:
+
+1. A clickable link to the GitHub project.
+2. The current app version and build date.
+3. The programming language used by the project.
+4. Credits.
+5. Project and dependency license notices.
+
+The build date is stored directly in code and should be updated with every new version.
 
 ## Default image location
 
@@ -139,13 +155,19 @@ Current runtime dependencies are:
 
 `Send2Trash`
 
+## License
+
+The project license is **MIT**. See `LICENSE` for the full text.
+
+The app also references license notices for major runtime components inside the **About** card.
+
 ## Notes
 
 The home page now focuses on monitoring state and recent history.
 
 The old **Send Now** action is no longer part of the interface.
 
-The settings page is the main place for connection and folder setup.
+The settings page is the main place for connection, folder setup, runtime options, and project information.
 
 The interface uses a compact visual system with shared sizing rules for buttons, inputs, cards, and scroll behavior.
 
