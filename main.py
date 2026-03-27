@@ -32,7 +32,7 @@ except Exception:
     winreg = None
 APP_NAME = 'disc-drive'
 APP_DIR_NAME = 'disc-drive'
-APP_VERSION = '3.0.59'
+APP_VERSION = '3.0.60'
 WINDOW_WIDTH = 560
 WINDOW_HEIGHT = 380
 
@@ -2290,7 +2290,7 @@ class PostTemplatePage(PageBase):
 
         self.profile_card = CardSection('Webhook Profile', 'Choose the avatar, set the webhook name, or clear the current custom data.')
         self.profile_card.setMinimumHeight(PAGE_SKELETON_PROFILE_CARD_MIN_H)
-        _, profile_row = make_inline_controls_row(spacing=CARD_INNER_ROW_SPACING)
+        profile_wrap, profile_row = make_inline_controls_row(spacing=CARD_INNER_ROW_SPACING)
         self.avatar_preview = AvatarPreview(AVATAR_SIZE)
         self.avatar_preview.clicked.connect(self.choose_profile_image)
         profile_row.addWidget(self.avatar_preview, 0, ALIGN_VCENTER)
@@ -2305,7 +2305,7 @@ class PostTemplatePage(PageBase):
         self.clear_profile_btn.setMinimumWidth(BTN_MIN_W)
         self.clear_profile_btn.setToolTip('Clear current image and custom name')
         profile_row.addWidget(self.clear_profile_btn, 0, ALIGN_VCENTER)
-        self.profile_card.content_layout.addLayout(profile_row)
+        self.profile_card.content_layout.addWidget(profile_wrap)
         self.scroll_body.addWidget(self.profile_card)
 
         embed_wrap, embed_layout = make_inline_controls_row(spacing=EMBED_ROW_SPACING)
