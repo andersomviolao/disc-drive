@@ -101,4 +101,4 @@ See [CHANGELOG.md](CHANGELOG.md) for version history.
 
 ## License
 
-The project license is MIT. See [LICENSE](LICENSE) for the full text.
+This repository is licensed under the MIT License. See [LICENSE](LICENSE) for the full text.

@@ -90,3 +90,7 @@ python -m py_compile .\main.pyw
 - Keep `img/default-img.png` beside the script or packaged executable.
 - Keep image-related helper scripts under `img/scripts`.
 - Keep optional FFmpeg at `ffmpeg/bin/ffmpeg.exe` when video thumbnails are needed.
+
+## 8. License
+
+Folder2Discord is distributed under the MIT License. See `LICENSE` for the full text.

@@ -4,6 +4,12 @@ All notable changes to **Folder2Discord** are documented in this file.
 
 This changelog combines the latest version notes with reconstructed historical entries from uploaded source snapshots. Older versions were rebuilt from source snapshots, so very small visual tweaks may not be listed individually.
 
+## [3.0.65]
+
+### Changed
+
+- Refreshed README and documentation license references.
+
 ## [3.0.64]
 
 ### Changed
