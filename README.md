@@ -1,4 +1,4 @@
-# disc-drive
+# Folder2Discord
 
 A lightweight Windows desktop app for automatically uploading images and videos from a local folder to a Discord webhook.
 
@@ -107,8 +107,8 @@ The build date is stored directly in code and should be updated with every new v
 The application expects the default image here:
 
 ```text
-disc-drive/
-├─ main.py
+Folder2Discord/
+├─ main.pyw
 ├─ files/
 │  └─ default-img.png
 ```
@@ -130,7 +130,7 @@ This folder should stay next to the main script or executable.
 The app stores runtime data in:
 
 ```text
-%LOCALAPPDATA%/disc-drive/
+%LOCALAPPDATA%/Folder2Discord/
 ```
 
 Typical files and folders include:
@@ -176,8 +176,8 @@ The project is Windows-focused because of tray behavior, startup integration, an
 ## Recommended folder layout
 
 ```text
-disc-drive/
-├─ main.py
+Folder2Discord/
+├─ main.pyw
 ├─ files/
 │  └─ default-img.png
 └─ ffmpeg/

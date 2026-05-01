@@ -30,11 +30,11 @@ try:
     import winreg
 except Exception:
     winreg = None
-APP_NAME = 'disc-drive'
-APP_DIR_NAME = 'disc-drive'
-APP_VERSION = '3.0.61'
-APP_BUILD_DATE = '2026-03-27'
-APP_GITHUB_URL = 'https://github.com/andersomviolao/disc-drive'
+APP_NAME = 'Folder2Discord'
+APP_DIR_NAME = 'Folder2Discord'
+APP_VERSION = '3.0.62'
+APP_BUILD_DATE = '2026-05-01'
+APP_GITHUB_URL = 'https://github.com/Discasa/Folder2Discord'
 APP_GITHUB_LABEL = 'Open project on GitHub'
 APP_PROGRAMMING_LANGUAGES = 'Python'
 APP_CREDITS = 'Anderson · ChatGPT'

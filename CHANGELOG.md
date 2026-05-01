@@ -1,8 +1,16 @@
 # Changelog
 
-All notable changes to **disc-drive** are documented in this file.
+All notable changes to **Folder2Discord** are documented in this file.
 
 This changelog combines the latest version notes with reconstructed historical entries from uploaded source snapshots. Older versions were rebuilt from source snapshots, so very small visual tweaks may not be listed individually.
+
+## [3.0.62]
+
+### Changed
+
+- Renamed the project from **disc-drive** to **Folder2Discord**.
+- Switched the Windows entry script from `main.py` to `main.pyw`.
+- Updated the GitHub project URL and local app data folder name for the new repository name.
 
 ## [3.0.61]
 
