@@ -91,6 +91,10 @@ The `img` folder must stay next to the main script or executable. FFmpeg is opti
 
 See [documentation.md](documentation.md) for architecture, runtime data, thumbnail handling, startup behavior, and maintenance notes.
 
+## Asset Layout
+
+Image assets live under `img`. Image-related helper scripts should live under `img/scripts`.
+
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for version history.
