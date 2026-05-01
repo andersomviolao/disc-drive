@@ -11,7 +11,7 @@ Folder2Discord is a compact Windows tray app that watches one local folder and u
 ```text
 Folder2Discord
   main.pyw           Main PySide6 application entrypoint
-  files              Default image assets used by the app
+  img                Default image assets used by the app
   ffmpeg             Optional local FFmpeg runtime for thumbnail support
   requirements.txt   Python dependencies
   README.md          User-facing overview
@@ -86,5 +86,5 @@ python -m py_compile .\main.pyw
 - Keep `APP_VERSION`, `APP_BUILD_DATE`, and `CHANGELOG.md` aligned.
 - Keep `README.md` focused on user-facing behavior.
 - Keep this file focused on implementation, runtime data, and maintenance.
-- Keep `files/default-img.png` beside the script or packaged executable.
+- Keep `img/default-img.png` beside the script or packaged executable.
 - Keep optional FFmpeg at `ffmpeg/bin/ffmpeg.exe` when video thumbnails are needed.

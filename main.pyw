@@ -32,7 +32,7 @@ except Exception:
     winreg = None
 APP_NAME = 'Folder2Discord'
 APP_DIR_NAME = 'Folder2Discord'
-APP_VERSION = '3.0.62'
+APP_VERSION = '3.0.63'
 APP_BUILD_DATE = '2026-05-01'
 APP_GITHUB_URL = 'https://github.com/Discasa/Folder2Discord'
 APP_GITHUB_LABEL = 'Open project on GitHub'
@@ -162,7 +162,7 @@ LOCAL_FFMPEG_PATH = RUNTIME_DIR / 'ffmpeg' / 'bin' / 'ffmpeg.exe'
 BASE_DIR = Path(os.getenv('LOCALAPPDATA', str(Path.home()))) / APP_DIR_NAME
 CONFIG_FILE = BASE_DIR / 'config.json'
 LOG_FILE = BASE_DIR / 'sent_log.json'
-FILES_DIR = RUNTIME_DIR / 'files'
+FILES_DIR = RUNTIME_DIR / 'img'
 DEFAULT_PLACEHOLDER_IMAGE_FILE = FILES_DIR / 'default-img.png'
 AVATAR_IMAGE_FILE = BASE_DIR / 'avatar.png'
 AVATAR_MODE_WEBHOOK = 'webhook'

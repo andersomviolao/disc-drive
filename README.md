@@ -6,7 +6,7 @@ The project is focused on a simple workflow: watch a folder, queue supported fil
 
 ## Current Status
 
-This README reflects the current behavior up to version **3.0.62**.
+This README reflects the current behavior up to version **3.0.63**.
 
 ## What The App Includes
 
@@ -78,14 +78,14 @@ Typical files and folders include:
 ```text
 Folder2Discord
   main.pyw
-  files
+  img
     default-img.png
   ffmpeg
     bin
       ffmpeg.exe
 ```
 
-The `files` folder must stay next to the main script or executable. FFmpeg is optional but improves video thumbnail support.
+The `img` folder must stay next to the main script or executable. FFmpeg is optional but improves video thumbnail support.
 
 ## Documentation
 

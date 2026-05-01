@@ -4,6 +4,14 @@ All notable changes to **Folder2Discord** are documented in this file.
 
 This changelog combines the latest version notes with reconstructed historical entries from uploaded source snapshots. Older versions were rebuilt from source snapshots, so very small visual tweaks may not be listed individually.
 
+## [3.0.63]
+
+### Changed
+
+- Standardized image assets under the `img` folder.
+- Updated the default image lookup from `files/default-img.png` to `img/default-img.png`.
+- Updated README and documentation paths for the new image folder.
+
 ## [3.0.62]
 
 ### Changed
